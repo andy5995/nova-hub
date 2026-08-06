@@ -4,6 +4,13 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-08-06)
+- Nodelist downloads now honour conditional requests. `GET /service/api/v1/leagues/{id}/nodelist`
+  answers `304 Not Modified` to a matching `If-None-Match`, or to an `If-Modified-Since` no older
+  than the file. Starlette's `FileResponse` was already sending `ETag` and `Last-Modified` but
+  never answering 304, so polling clients re-fetched an unchanged nodelist on every sync. A 304
+  deliberately does not touch `downloaded_at`, which keeps meaning "last actual transfer".
+
 ### Added
 - An admin can rename a league and edit its description from the league's
   Edit dialog. The name is only shown in the console; the league number and
