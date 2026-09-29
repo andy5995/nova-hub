@@ -191,6 +191,33 @@ def attacks(packet: bytes) -> List[Attack]:
             if r.type in (INDIV_ATTACK, ATTACK_RESULT)]
 
 
+# ── league settings ───────────────────────────────────────────────────────
+# The League Coordinator's editor settings travel as a Configupdate, a run of
+# u16 words. Located by changing them in BRE EDITOR on the rig (protection
+# 20 -> 0, attacks/day 1 -> 10, lost-attack days 7 -> 1) and diffing the record.
+CONFIG_UPDATE = 0x0A
+
+
+@dataclass
+class LeagueSettings:
+    game_started_at: Optional[datetime.datetime]
+    protection_turns: int
+    indiv_attacks_per_day: int
+    lost_attack_days: int      # the MIT window: no result by then, forces come home
+
+
+def league_settings(record: Record) -> LeagueSettings:
+    d = record.data
+    if record.type != CONFIG_UPDATE or len(d) < 34:
+        raise PacketFormatError(f"{record.name} is not a Configupdate")
+    w = struct.unpack_from("<17H", d, 0)
+    try:
+        started = datetime.datetime(w[0], w[1], w[2], w[3], w[4], w[5])
+    except ValueError:
+        started = None
+    return LeagueSettings(started, w[8], w[12], w[16])
+
+
 if __name__ == "__main__":
     import sys
     for path in sys.argv[1:]:

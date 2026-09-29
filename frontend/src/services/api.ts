@@ -212,6 +212,63 @@ export const movementsApi = {
     api.get<MovementSummary>('/movements/summary', { params }),
 }
 
+// Attacks API functions
+//
+// Each BRE individual attack, followed through the hub by the ID its result
+// echoes. Never carries unit counts: those are hidden game state.
+export interface AttackHop {
+  is_result: boolean
+  packet_id: number
+  filename: string
+  source_bbs: number | null
+  dest_bbs: number | null
+  at_hub: string | null
+  taken: string | null
+}
+
+export type AttackStage =
+  | 'result delivered'
+  | 'result awaiting pickup'
+  | 'awaiting result'
+  | 'attack awaiting pickup'
+  | 'not seen'
+
+export interface AttackJourney {
+  attack_id: string
+  league_id: number
+  league_name: string | null
+  from_planet: number
+  to_planet: number
+  attacker: string
+  target: string
+  attack_type: string | null
+  launched: string | null
+  resolved: string | null
+  attack_at_hub: string | null
+  attack_delivered: string | null
+  result_at_hub: string | null
+  result_delivered: string | null
+  stage: AttackStage
+  lost_attack_days: number
+  mit_due: string | null
+  mit: 'late' | 'overdue' | null
+  hops: AttackHop[]
+}
+
+export interface AttackFilters {
+  days?: number
+  league_id?: number
+  planet?: number
+  attack_id?: string
+  mit?: 'late' | 'overdue' | 'any'
+  limit?: number
+}
+
+export const attacksApi = {
+  list: (params: AttackFilters = {}) =>
+    api.get<AttackJourney[]>('/attacks/', { params }),
+}
+
 // Alerts API functions
 export const alertsApi = {
   list: () =>

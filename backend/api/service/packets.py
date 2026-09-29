@@ -179,6 +179,10 @@ async def upload_packet(
     db.add(packet)
     db.commit()
 
+    # Best-effort: an attack that cannot be traced must not fail the upload.
+    from backend.services.attack_trace import record_safely
+    record_safely(db, packet, content)
+
     # Trigger processing (fire and forget)
     from backend.services.processing_service import trigger_processing
     trigger_processing()

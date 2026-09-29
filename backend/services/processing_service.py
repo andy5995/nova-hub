@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from backend.models.database import League, LeagueMembership, Packet, ProcessingRun, ProcessingRunFile
 from backend.core.database import get_session
 from backend.logging_config import get_logger
+from backend.services.attack_trace import record_safely
 from backend.services.dosemu_runner import DosemuRunner
 from backend.services.packet_service import parse_packet_filename
 from backend.services.sequence_validator import (
@@ -734,6 +735,8 @@ class ProcessingService:
                     logger.info(f"Collected outbound: {normalized_filename}")
 
                 self.db.commit()
+                # A relayed attack is repacked here; this is the hop to its target.
+                record_safely(self.db, existing or packet, content)
 
             except Exception as e:
                 logger.error(f"Error collecting {packet_file.name}: {e}")

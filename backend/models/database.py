@@ -267,6 +267,65 @@ class ProcessingRunItem(Base):
     run = relationship("ProcessingRun", back_populates="items")
 
 
+class AttackSighting(Base):
+    """One BRE individual attack, or its result, inside one packet the hub carried.
+
+    An attack is usually seen more than once: under HOST routing the attacker's
+    upload carries it to the hub, and the hub's own game repacks it into the
+    packet for the target. Its result makes the same trip back. The attack ID
+    (8 bytes the game generates, echoed verbatim in the result) ties every
+    sighting together, so grouping by it gives the attack's whole journey --
+    which is what tells a Missing In Transit apart from a slow board.
+
+    Deliberately no unit counts: they are hidden game state, and nothing about
+    tracing an attack needs them. See backend/services/bre_packet.py.
+    """
+
+    __tablename__ = "attack_sightings"
+
+    __table_args__ = (
+        Index("ix_attack_sightings_league_stamp", "league_id", "stamp"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    attack_id = Column(String(16), nullable=False, index=True)
+    is_result = Column(Boolean, nullable=False, default=False)
+    packet_id = Column(Integer, ForeignKey("packets.id"), nullable=False, index=True)
+    league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False)
+
+    # Game planet numbers, which are the league's BBS indices.
+    from_planet = Column(Integer, nullable=False)
+    to_planet = Column(Integer, nullable=False)
+    attacker = Column(String(1), nullable=False)   # realm letter on from_planet
+    target = Column(String(1), nullable=False)     # realm letter on to_planet
+    attack_type = Column(String(20), nullable=True)
+
+    # Attack: when the attacker's session began -- the Date: on their MIT report.
+    # Result: when the defender's game resolved it.
+    stamp = Column(DateTime, nullable=True)
+
+    packet = relationship("Packet")
+
+
+class LeagueGameSettings(Base):
+    """The League Coordinator's settings, as last broadcast in a Configupdate.
+
+    Only what the attack view needs: `lost_attack_days` is the MIT window, and it
+    is a league setting (default 7), so judging an attack against a fixed number
+    would be wrong for any league that changed it.
+    """
+
+    __tablename__ = "league_game_settings"
+
+    league_id = Column(Integer, ForeignKey("leagues.id"), primary_key=True)
+    game_started_at = Column(DateTime, nullable=True)
+    protection_turns = Column(Integer, nullable=True)
+    indiv_attacks_per_day = Column(Integer, nullable=True)
+    lost_attack_days = Column(Integer, nullable=True)
+    packet_id = Column(Integer, ForeignKey("packets.id"), nullable=True)
+    seen_at = Column(DateTime, nullable=True)
+
+
 class ProcessingRunFile(Base):
     """Files generated during processing runs (scores, routes, bbsinfo)"""
 

@@ -1,0 +1,482 @@
+<script setup lang="ts">
+/**
+ * Where each attack got to.
+ *
+ * A Missing In Transit is the attacker's game giving up on a result that never
+ * came back. This page shows how far each attack actually travelled: to the
+ * hub, on to the target, back to the hub as a result, and home again. The last
+ * step reached is where it stopped.
+ *
+ * Like Movements, this is for reading rather than alarming: a board that has not
+ * polled today is not broken. The one verdict it does give is MIT, because the
+ * game's rule is mechanical -- no result by the league's "Days for Lost Attacks"
+ * and the attack is written off, and a result arriving after that is discarded.
+ *
+ * Unit counts never reach this page. They are hidden game state, and nothing
+ * here needs them to tell one attack from another.
+ */
+import { computed, onMounted, ref, watch } from 'vue'
+import AppLayout from '@/components/AppLayout.vue'
+import { attacksApi, leaguesApi, type AttackJourney } from '@/services/api'
+
+const loading = ref(false)
+const error = ref<string | null>(null)
+const journeys = ref<AttackJourney[]>([])
+const leagues = ref<Array<{ id: number; name: string }>>([])
+const expanded = ref<Set<string>>(new Set())
+
+const days = ref(14)
+const leagueId = ref<number | undefined>(undefined)
+const planet = ref<number | undefined>(undefined)
+const onlyMit = ref(false)
+const idSearch = ref('')
+const launchedOn = ref('')   // YYYY-MM-DD, matched client-side
+
+const STEPS: Array<{ key: keyof AttackJourney; label: string }> = [
+  { key: 'attack_at_hub', label: 'Attack reached the hub' },
+  { key: 'attack_delivered', label: 'Attack taken by the target board' },
+  { key: 'result_at_hub', label: 'Result reached the hub' },
+  { key: 'result_delivered', label: 'Result taken by the attacker board' },
+]
+
+async function load() {
+  loading.value = true
+  error.value = null
+  try {
+    const id = idSearch.value.trim()
+    const { data } = await attacksApi.list({
+      days: days.value,
+      league_id: leagueId.value,
+      planet: planet.value || undefined,
+      attack_id: /^[0-9a-fA-F]{1,16}$/.test(id) ? id : undefined,
+      mit: onlyMit.value ? 'any' : undefined,
+    })
+    journeys.value = data
+  } catch (e: any) {
+    error.value = e?.response?.data?.detail || 'Could not load attacks'
+  } finally {
+    loading.value = false
+  }
+}
+
+/** A player's MIT report gives a date, not an ID; this is how to get from one to the other. */
+const shown = computed(() =>
+  launchedOn.value
+    ? journeys.value.filter((j) => j.launched?.startsWith(launchedOn.value))
+    : journeys.value
+)
+
+const counts = computed(() => {
+  const c = { total: journeys.value.length, delivered: 0, waiting: 0, late: 0, overdue: 0 }
+  for (const j of journeys.value) {
+    if (j.stage === 'result delivered') c.delivered++
+    else c.waiting++
+    if (j.mit === 'late') c.late++
+    if (j.mit === 'overdue') c.overdue++
+  }
+  return c
+})
+
+function toggle(id: string) {
+  const next = new Set(expanded.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expanded.value = next
+}
+
+function when(stamp: string | null): string {
+  if (!stamp) return '-'
+  return stamp.replace('T', ' ').slice(0, 19)
+}
+
+function reached(j: AttackJourney, key: keyof AttackJourney): boolean {
+  return !!j[key]
+}
+
+function stepTitle(j: AttackJourney, step: { key: keyof AttackJourney; label: string }): string {
+  const at = j[step.key] as string | null
+  return at ? `${step.label}: ${when(at)}` : `${step.label}: not yet`
+}
+
+function stageClass(j: AttackJourney): string {
+  if (j.mit) return 'badge-danger'
+  return j.stage === 'result delivered' ? 'badge-success' : 'badge-warning'
+}
+
+function mitText(j: AttackJourney): string {
+  if (j.mit === 'late') return 'MIT: result arrived too late'
+  if (j.mit === 'overdue') return 'MIT: past the window'
+  return ''
+}
+
+function clearFilters() {
+  leagueId.value = undefined
+  planet.value = undefined
+  onlyMit.value = false
+  idSearch.value = ''
+  launchedOn.value = ''
+}
+
+const filtersActive = computed(
+  () => !!(leagueId.value || planet.value || onlyMit.value || idSearch.value || launchedOn.value)
+)
+
+onMounted(async () => {
+  try {
+    const { data } = await leaguesApi.list()
+    leagues.value = data
+  } catch {
+    // The league filter is a convenience; the page works without it.
+  }
+  await load()
+})
+
+let idTimer: ReturnType<typeof setTimeout> | undefined
+watch(idSearch, () => {
+  clearTimeout(idTimer)
+  idTimer = setTimeout(load, 300)
+})
+watch([days, leagueId, planet, onlyMit], load)
+</script>
+
+<template>
+  <AppLayout>
+    <div class="page">
+      <header class="page-header">
+        <div>
+          <h1>Attacks</h1>
+          <p class="text-muted">
+            BRE individual attacks, followed through the hub by the ID each result echoes
+          </p>
+        </div>
+        <div class="window-picker">
+          <label for="days">Launched</label>
+          <select id="days" v-model.number="days" class="form-select">
+            <option :value="1">Last 24 hours</option>
+            <option :value="7">Last 7 days</option>
+            <option :value="14">Last 14 days</option>
+            <option :value="30">Last 30 days</option>
+            <option :value="90">Last 90 days</option>
+          </select>
+        </div>
+      </header>
+
+      <div v-if="error" class="alert alert-error">
+        {{ error }}
+        <button class="btn btn-sm btn-secondary mt-2" @click="load">Retry</button>
+      </div>
+
+      <div v-else-if="loading && journeys.length === 0" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading attacks...</p>
+      </div>
+
+      <template v-else>
+        <div class="tiles">
+          <div class="card tile">
+            <span class="tile-n">{{ counts.total }}</span>
+            <span class="text-muted">attacks</span>
+          </div>
+          <div class="card tile">
+            <span class="tile-n">{{ counts.delivered }}</span>
+            <span class="text-muted">result home</span>
+          </div>
+          <div class="card tile">
+            <span class="tile-n">{{ counts.waiting }}</span>
+            <span class="text-muted">still travelling</span>
+          </div>
+          <button class="card tile tile-mit" :class="{ on: onlyMit }" @click="onlyMit = !onlyMit"
+                  title="Show only attacks the attacker's game will have written off">
+            <span class="tile-n">{{ counts.late + counts.overdue }}</span>
+            <span class="text-muted">Missing In Transit</span>
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-header filter-bar">
+            <h2>
+              {{ shown.length }} attack<span v-if="shown.length !== 1">s</span>
+            </h2>
+            <div class="filters">
+              <select v-model="leagueId" class="form-select">
+                <option :value="undefined">All leagues</option>
+                <option v-for="l in leagues" :key="l.id" :value="l.id">{{ l.name }}</option>
+              </select>
+              <input v-model.number="planet" type="number" min="1" class="form-input narrow"
+                     placeholder="Planet" title="Attacker's or target's planet" />
+              <input v-model="launchedOn" type="date" class="form-input"
+                     title="The Date: on the player's MIT report" />
+              <input v-model="idSearch" class="form-input id-input font-mono"
+                     placeholder="Attack ID" title="Any leading part of the ID" />
+              <button v-if="filtersActive" class="btn btn-sm btn-secondary" @click="clearFilters">
+                Clear
+              </button>
+            </div>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <div v-if="shown.length === 0" class="empty">
+              <p class="text-muted">
+                No attacks match. Attacks are read from BRE packets as they reach the hub;
+                packets stored before this page existed appear once
+                <code>backfill_attacks.py</code> has been run.
+              </p>
+            </div>
+            <table v-else class="table">
+              <thead>
+                <tr>
+                  <th>Launched</th>
+                  <th>League</th>
+                  <th>From &rarr; to</th>
+                  <th>Type</th>
+                  <th>Journey</th>
+                  <th>Where it is</th>
+                  <th>ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="j in shown" :key="j.attack_id">
+                  <tr class="clickable" :class="{ mit: j.mit }" @click="toggle(j.attack_id)">
+                    <td class="font-mono" title="On the attacker board's clock -- the Date: on its MIT report">
+                      {{ when(j.launched) }}
+                    </td>
+                    <td>{{ j.league_name || '-' }}</td>
+                    <td class="font-mono">
+                      {{ j.from_planet }}{{ j.attacker }} &rarr; {{ j.to_planet }}{{ j.target }}
+                    </td>
+                    <td>{{ j.attack_type || '-' }}</td>
+                    <td>
+                      <span class="journey">
+                        <template v-for="(s, i) in STEPS" :key="s.key">
+                          <span v-if="i === 2" class="turn" title="The target's game resolves it here"></span>
+                          <span class="dot" :class="{ on: reached(j, s.key) }" :title="stepTitle(j, s)"></span>
+                        </template>
+                      </span>
+                    </td>
+                    <td>
+                      <span class="badge" :class="stageClass(j)">{{ j.stage }}</span>
+                      <div v-if="j.mit" class="mit-text">{{ mitText(j) }}</div>
+                    </td>
+                    <td class="font-mono text-muted">{{ j.attack_id }}</td>
+                  </tr>
+                  <tr v-if="expanded.has(j.attack_id)" class="detail">
+                    <td colspan="7">
+                      <div class="detail-grid">
+                        <div>
+                          <h3>Journey</h3>
+                          <dl>
+                            <dt>Launched</dt><dd class="font-mono">{{ when(j.launched) }} <span class="text-muted">(attacker's clock)</span></dd>
+                            <template v-for="s in STEPS" :key="`st-${s.key}`">
+                              <dt>{{ s.label }}</dt>
+                              <dd class="font-mono">{{ when(j[s.key] as string | null) }}</dd>
+                            </template>
+                            <dt>Resolved</dt><dd class="font-mono">{{ when(j.resolved) }} <span class="text-muted">(defender's clock)</span></dd>
+                            <dt>MIT window</dt>
+                            <dd>
+                              {{ j.lost_attack_days }} day<span v-if="j.lost_attack_days !== 1">s</span>
+                              <span class="text-muted"> &mdash; written off from {{ when(j.mit_due).slice(0, 10) }}</span>
+                            </dd>
+                          </dl>
+                        </div>
+                        <div>
+                          <h3>Packets that carried it</h3>
+                          <table class="table compact">
+                            <thead>
+                              <tr><th></th><th>Packet</th><th>Boards</th><th>At hub</th><th>Taken</th></tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="h in j.hops" :key="`${h.packet_id}-${h.is_result}`">
+                                <td>
+                                  <span class="badge" :class="h.is_result ? 'badge-info' : 'badge-secondary'">
+                                    {{ h.is_result ? 'result' : 'attack' }}
+                                  </span>
+                                </td>
+                                <td class="font-mono">{{ h.filename }}</td>
+                                <td class="font-mono">{{ h.source_bbs }} &rarr; {{ h.dest_bbs }}</td>
+                                <td class="font-mono">{{ when(h.at_hub) }}</td>
+                                <td class="font-mono">{{ h.taken ? when(h.taken) : 'not yet' }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+    </div>
+  </AppLayout>
+</template>
+
+<style scoped>
+.page {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.page-header h1 {
+  margin-bottom: 0.25rem;
+}
+
+.window-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4rem;
+  gap: 1rem;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.tile-n {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-mit {
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+}
+
+.tile-mit .tile-n {
+  color: var(--color-danger);
+}
+
+.tile-mit.on {
+  border-color: var(--color-danger);
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.narrow {
+  width: 6rem;
+}
+
+.id-input {
+  width: 11rem;
+}
+
+.empty {
+  padding: 2rem;
+  text-align: center;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--color-background-mute, rgba(127, 127, 127, 0.12));
+}
+
+tr.mit td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+.journey {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  background: transparent;
+}
+
+.dot.on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.turn {
+  width: 0.9rem;
+  height: 2px;
+  background: var(--color-border);
+}
+
+.mit-text {
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  margin-top: 0.2rem;
+}
+
+.detail > td {
+  background: var(--color-background-mute, rgba(127, 127, 127, 0.06));
+  padding: 1rem 1.25rem;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) 2fr;
+  gap: 1.5rem;
+}
+
+.detail h3 {
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.detail dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.detail dt {
+  color: var(--color-text-muted);
+}
+
+.table.compact td,
+.table.compact th {
+  padding: 0.3rem 0.4rem;
+  font-size: 0.85rem;
+}
+</style>

@@ -88,6 +88,23 @@ def test_a_result_is_stamped_when_it_was_resolved():
     assert back > sent
 
 
+def _settings(name):
+    return bp.league_settings(
+        next(r for r in bp.parse(load(name)) if r.type == bp.CONFIG_UPDATE))
+
+
+def test_league_settings_as_reset_left_them():
+    s = _settings("relay_900B0103.002")
+    assert (s.protection_turns, s.indiv_attacks_per_day, s.lost_attack_days) == (20, 1, 7)
+
+
+def test_league_settings_after_the_editor_changed_them():
+    # BRE EDITOR on node 1: protection 0, ten attacks a day, MIT after one day.
+    s = _settings("results_late_901b0102.004")
+    assert (s.protection_turns, s.indiv_attacks_per_day, s.lost_attack_days) == (0, 10, 1)
+    assert s.game_started_at == datetime(2026, 9, 29, 2, 20, 4)
+
+
 def test_a_damaged_record_fails_its_checksum_rather_than_decoding_quietly():
     raw = bytearray(load("attacks_901b0201.001"))
     raw[-10] ^= 0x01          # inside the last record's payload, before the trailer
