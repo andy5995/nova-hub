@@ -22,6 +22,7 @@ own, processed by the hub's game.
 Everything here is best-effort with respect to ingest: decoding a packet must
 never be the reason a packet fails to be stored.
 """
+import bisect
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -37,6 +38,7 @@ from backend.services import bre_packet
 logger = get_logger(context="attack_trace")
 
 DEFAULT_LOST_ATTACK_DAYS = 7    # BRE's default, used until a Configupdate is seen
+NODELIST_PREFIXES = ("BRNODES.", "FENODES.")   # stored as packets, but text
 
 
 def _now() -> datetime:
@@ -44,7 +46,7 @@ def _now() -> datetime:
 
 
 # ── recording ─────────────────────────────────────────────────────────────
-def record(db: Session, packet: Packet, content: bytes) -> int:
+def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> int:
     """Record the attacks and league settings in one packet. Returns sightings added.
 
     Idempotent per packet: a filename is reused when its sequence number wraps,
@@ -54,6 +56,8 @@ def record(db: Session, packet: Packet, content: bytes) -> int:
     league = packet.league or db.get(League, packet.league_id)
     if league is None or league.game_type != "B":
         return 0
+    if packet.filename.upper().startswith(NODELIST_PREFIXES):
+        return 0          # BRNODES.015 is a text nodelist, not a game packet
 
     records = bre_packet.parse(content)
     db.query(AttackSighting).filter(AttackSighting.packet_id == packet.id).delete()
@@ -76,7 +80,10 @@ def record(db: Session, packet: Packet, content: bytes) -> int:
             added += 1
         elif rec.type == bre_packet.CONFIG_UPDATE:
             _remember_settings(db, league, packet, bre_packet.league_settings(rec))
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return added
 
 
@@ -108,6 +115,7 @@ def _remember_settings(db, league, packet, s: bre_packet.LeagueSettings):
 
 # ── backfill ──────────────────────────────────────────────────────────────
 PACKET_DIRS = ("processed", "outbound", "inbound")
+BATCH = 200
 
 
 def backfill(db: Session, data_dir: Path, redo: bool = False) -> Dict[str, int]:
@@ -116,7 +124,8 @@ def backfill(db: Session, data_dir: Path, redo: bool = False) -> Dict[str, int]:
     A file is only used if its SHA-256 matches the row's checksum: filenames are
     reused every thousand packets, so a same-named file may be a later packet.
     """
-    counts = {"packets": 0, "traced": 0, "sightings": 0, "missing": 0, "mismatched": 0}
+    counts = {"packets": 0, "traced": 0, "sightings": 0, "missing": 0,
+              "mismatched": 0, "failed": 0}
     done = set() if redo else {
         pid for (pid,) in db.query(AttackSighting.packet_id).distinct()
     }
@@ -130,16 +139,33 @@ def backfill(db: Session, data_dir: Path, redo: bool = False) -> Dict[str, int]:
     for packet in packets:
         if packet.id in done:
             continue
+        if packet.filename.upper().startswith(NODELIST_PREFIXES):
+            continue
         counts["packets"] += 1
-        content = packet.file_data or _read(index.get(packet.filename.upper()))
-        if content is None:
+        candidates = _candidates(packet, index.get(packet.filename.upper()))
+        if not candidates:
             counts["missing"] += 1
             continue
-        if packet.checksum and hashlib.sha256(content).hexdigest() != packet.checksum:
+        content = next((c for c in candidates if not packet.checksum
+                        or hashlib.sha256(c).hexdigest() == packet.checksum), None)
+        if content is None:
             counts["mismatched"] += 1
             continue
-        counts["sightings"] += record_safely(db, packet, content)
-        counts["traced"] += 1
+        # One commit per packet costs an fsync each: measured at over ten
+        # minutes for production's 21k packets. Batch them, with a savepoint
+        # per packet so one that cannot be decoded does not lose the batch.
+        savepoint = db.begin_nested()
+        try:
+            counts["sightings"] += record(db, packet, content, commit=False)
+            savepoint.commit()
+            counts["traced"] += 1
+        except Exception as exc:
+            savepoint.rollback()
+            counts["failed"] += 1
+            logger.warning(f"Could not trace attacks in {packet.filename}: {exc}")
+        if counts["packets"] % BATCH == 0:
+            db.commit()
+    db.commit()
     return counts
 
 
@@ -154,16 +180,22 @@ def _file_index(data_dir: Path) -> Dict[str, List[Path]]:
     return index
 
 
-def _read(paths: Optional[List[Path]]) -> Optional[bytes]:
-    # Several dirs may hold the name (a direct-routed packet is both archived
-    # and copied to outbound); the checksum test picks the right one, so any
-    # candidate that matches will do -- return the first readable.
+def _candidates(packet: Packet, paths: Optional[List[Path]]) -> List[bytes]:
+    """Every copy of what this row might hold; the checksum decides which is it.
+
+    `file_data` is not always the answer: when an outbound sequence number
+    wraps, the collector rewrote the row's checksum but left the old packet's
+    bytes in `file_data` -- 1,215 of production's rows. The right bytes are then
+    the file on disk. Several dirs may also hold the name (a direct-routed
+    packet is both archived and copied to outbound).
+    """
+    out = [packet.file_data] if packet.file_data else []
     for p in paths or ():
         try:
-            return p.read_bytes()
+            out.append(p.read_bytes())
         except OSError:
             continue
-    return None
+    return out
 
 
 # ── the journey ───────────────────────────────────────────────────────────
@@ -194,6 +226,8 @@ class Journey:
     result_at_hub: Optional[datetime] = None
     result_delivered: Optional[datetime] = None
     lost_attack_days: int = DEFAULT_LOST_ATTACK_DAYS
+    # The attacker's board clock minus the hub's; None if never measured.
+    attacker_clock: Optional[timedelta] = None
     hops: List[Hop] = field(default_factory=list)
 
     @property
@@ -209,17 +243,25 @@ class Journey:
         return "not seen"
 
     @property
-    def mit_due(self) -> Optional[datetime]:
-        """The game day the attacker's board gives up on it.
+    def mit_due_local(self) -> Optional[datetime]:
+        """Midnight on the attacker's clock at which its board gives up.
 
-        The game counts in days from the attack's date, so this is a date, not a
-        24-hour multiple of the launch time -- and it is on the attacker's clock,
-        which the hub's clock only approximates.
+        The game counts in dates from the attack's date, not 24-hour multiples of
+        the launch time: in production an attack launched at 23:56 was written off
+        at its board's maintenance four minutes later (league 015B, Lost Attacks 1).
         """
         if not self.launched:
             return None
         day = datetime.combine(self.launched.date(), datetime.min.time())
         return day + timedelta(days=self.lost_attack_days)
+
+    @property
+    def mit_due(self) -> Optional[datetime]:
+        """The same moment on the hub's clock, which is what hops are timed by."""
+        due = self.mit_due_local
+        if due is None:
+            return None
+        return due - (self.attacker_clock or timedelta(0))
 
     @property
     def mit(self) -> Optional[str]:
@@ -231,6 +273,50 @@ class Journey:
         if self.result_delivered:
             return "late" if self.result_delivered >= due else None
         return "overdue" if _now() >= due else None
+
+
+# ── board clocks ──────────────────────────────────────────────────────────
+# Boards keep local time and the hub keeps UTC. Production's three boards run at
+# +10h, +12h/+13h (New Zealand, with DST) and about +0h. A record's stamp is on
+# the sending board's clock and it reaches the hub minutes later, so stamp minus
+# arrival is a lower bound on that board's offset -- close for a result, which
+# is uploaded as soon as it is resolved; looser for an attack, stamped at the
+# start of the player's session. The largest of the observations nearest in time
+# (nearest, so a DST change is picked up), rounded to the quarter hour that time
+# zones come in, is the offset.
+CLOCK_SAMPLES = 6
+_QUARTER_HOUR = 900
+
+
+def _clock_observations(db: Session, league_ids, hub: Optional[int]
+                        ) -> Dict[tuple, List[tuple]]:
+    q = (db.query(AttackSighting, Packet)
+         .join(Packet, AttackSighting.packet_id == Packet.id)
+         .filter(AttackSighting.league_id.in_(league_ids),
+                 AttackSighting.stamp.isnot(None)))
+    obs: Dict[tuple, List[tuple]] = {}
+    for s, p in q.all():
+        sender = s.to_planet if s.is_result else s.from_planet
+        source = _bbs(p.source_bbs_index)
+        if source != sender:
+            continue                  # relayed: arrival says nothing of its clock
+        at_hub = (p.processed_at or p.uploaded_at) if source == hub else p.uploaded_at
+        if at_hub:
+            obs.setdefault((s.league_id, sender), []).append(
+                (at_hub, (s.stamp - at_hub).total_seconds()))
+    for v in obs.values():
+        v.sort()
+    return obs
+
+
+def _clock_at(obs: List[tuple], when: datetime) -> Optional[timedelta]:
+    if not obs:
+        return None
+    i = bisect.bisect_left(obs, (when,))
+    near = sorted(obs[max(0, i - CLOCK_SAMPLES):i + CLOCK_SAMPLES],
+                  key=lambda o: abs((o[0] - when).total_seconds()))[:CLOCK_SAMPLES]
+    best = max(offset for _, offset in near)
+    return timedelta(seconds=round(best / _QUARTER_HOUR) * _QUARTER_HOUR)
 
 
 def _bbs(hexstr: str) -> Optional[int]:
@@ -278,23 +364,31 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
         # A packet for the hub's own board is taken when the hub's game runs it;
         # any other is taken when that board's client downloads it.
         taken = p.processed_at if dest == hub else p.downloaded_at
-        j.hops.append(Hop(s.is_result, p.id, p.filename, _bbs(p.source_bbs_index),
-                          dest, p.uploaded_at, taken))
+        # A packet the hub's own game wrote reached the hub when it was
+        # collected. uploaded_at is not that: the collector reuses the row when
+        # a sequence number wraps, and uploaded_at keeps the first packet's time.
+        source = _bbs(p.source_bbs_index)
+        at_hub = (p.processed_at or p.uploaded_at) if source == hub else p.uploaded_at
+        j.hops.append(Hop(s.is_result, p.id, p.filename, source, dest, at_hub, taken))
         if s.is_result:
             j.resolved = _earliest(j.resolved, s.stamp)
-            j.result_at_hub = _earliest(j.result_at_hub, p.uploaded_at)
+            j.result_at_hub = _earliest(j.result_at_hub, at_hub)
             if dest == s.from_planet and taken:
                 j.result_delivered = _earliest(j.result_delivered, taken)
         else:
             j.launched = j.launched or s.stamp
             j.attack_type = j.attack_type or s.attack_type
-            j.attack_at_hub = _earliest(j.attack_at_hub, p.uploaded_at)
+            j.attack_at_hub = _earliest(j.attack_at_hub, at_hub)
             if dest == s.to_planet and taken:
                 j.attack_delivered = _earliest(j.attack_delivered, taken)
 
     out = list(by_id.values())
+    clocks = _clock_observations(db, {j.league_id for j in out}, hub) if out else {}
     for j in out:
         j.hops.sort(key=lambda h: (h.at_hub or datetime.min, h.is_result))
+        when = j.attack_at_hub or j.launched
+        if when:
+            j.attacker_clock = _clock_at(clocks.get((j.league_id, j.from_planet)), when)
     out.sort(key=lambda j: j.launched or j.attack_at_hub or datetime.min, reverse=True)
     return out[:limit]
 

@@ -38,6 +38,10 @@ class AttackJourney(BaseModel):
     result_delivered: Optional[str] = None
     stage: str
     lost_attack_days: int
+    # When the attacker's board writes it off: midnight on its own clock, and
+    # that moment on the hub's. The board's offset from the hub is measured.
+    mit_due_local: Optional[str] = None
     mit_due: Optional[str] = None
+    attacker_clock_minutes: Optional[int] = None
     mit: Optional[str] = None       # "late" | "overdue" | None
     hops: List[AttackHop] = []

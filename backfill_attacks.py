@@ -44,6 +44,7 @@ def main() -> int:
     print(f"  attack sightings:     {counts['sightings']}")
     print(f"  file no longer held:  {counts['missing']}")
     print(f"  file is a later one:  {counts['mismatched']}")
+    print(f"  could not be decoded: {counts['failed']}")
     return 0
 
 

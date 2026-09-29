@@ -111,6 +111,13 @@ def test_a_damaged_record_fails_its_checksum_rather_than_decoding_quietly():
     assert not all(r.crc_ok for r in bp.parse(bytes(raw)))
 
 
+def test_a_literal_fd_survives_decompression():
+    """Found in production: 0xFD inside an attack ID is sent as FD 00, or bare
+    when it is the last byte. Treating either as a zero run shifts the ID."""
+    assert bp.unrle(bytes.fromhex("41fd03fd0042")) == bytes.fromhex("41000000fd42")
+    assert bp.unrle(bytes.fromhex("58cbfd")) == bytes.fromhex("58cbfd")
+
+
 def test_truncation_is_an_error():
     with pytest.raises(bp.PacketFormatError):
         bp.parse(load("attacks_901b0201.001")[:100])

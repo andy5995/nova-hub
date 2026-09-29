@@ -9,7 +9,7 @@ result packets says so -- which is what the MIT judgement must use.
 """
 import hashlib
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -153,6 +153,24 @@ def test_a_result_handed_over_after_the_window_is_late(db, league):
     assert {x.target for x in late} == {"A", "B"}
 
 
+def test_the_window_closes_at_midnight_on_the_attackers_clock(db, league):
+    """Boards keep local time, the hub UTC; production's run 10 to 13 hours
+    ahead. Here node 2 is 10 hours ahead, and its result is handed over at 15:00
+    on the 29th by the hub -- already 01:00 on the 30th for node 2, past midnight,
+    so its game has thrown the attack away. Judged on the hub's clock it would
+    look nine hours early."""
+    ahead = timedelta(hours=10)
+    store(db, league, "attacks_mit_901b0201.002", "901b0201.002",
+          at=t("03:02") - ahead, taken=t("03:04") - ahead)
+    store(db, league, "results_late_901b0102.004", "901b0102.004",
+          at=t("03:04") - ahead, taken=t("15:00"))
+    got = list(by_id(db).values())
+    assert {x.attacker_clock for x in got} == {ahead}
+    assert {x.mit_due_local for x in got} == {datetime(2026, 9, 30)}
+    assert {x.mit_due for x in got} == {datetime(2026, 9, 29, 14, 0)}
+    assert {x.mit for x in got} == {"late"}
+
+
 def test_no_result_past_the_window_is_overdue(db, league, monkeypatch):
     rig_session(db, league)
     # Drop the first round's results, leaving those attacks waiting.
@@ -197,6 +215,64 @@ def test_backfill_reads_files_whose_checksum_matches(db, league, tmp_path):
     counts = attack_trace.backfill(db, tmp_path)
     assert (counts["traced"], counts["mismatched"], counts["sightings"]) == (1, 1, 3)
     assert attack_trace.backfill(db, tmp_path)["packets"] == 1   # only the untraceable one
+
+
+def test_backfill_carries_on_past_a_packet_it_cannot_decode(db, league, tmp_path):
+    """Batched with a savepoint per packet: one bad packet must not lose the rest."""
+    processed = tmp_path / "packets" / "processed"
+    processed.mkdir(parents=True)
+    junk = b"\x00" * 12 + b"\x07\xff\xff"            # a record header that runs off the end
+    bad = Packet(filename="901B0201.007", league_id=league.id, source_bbs_index="02",
+                 dest_bbs_index="01", sequence_number=7, file_size=len(junk),
+                 checksum=hashlib.sha256(junk).hexdigest(), uploaded_at=t("02:50"))
+    db.add(bad)
+    db.commit()
+    (processed / "901B0201.007").write_bytes(junk)
+    store(db, league, "attacks_901b0201.001", "901b0201.001", at=t("02:53"), trace=False)
+    (processed / "901B0201.001").write_bytes(raw("attacks_901b0201.001"))
+
+    counts = attack_trace.backfill(db, tmp_path)
+    assert (counts["failed"], counts["traced"], counts["sightings"]) == (1, 1, 3)
+    db.rollback()                      # nothing pending may depend on the bad packet
+    assert db.query(AttackSighting).count() == 3
+
+
+def test_backfill_prefers_the_file_whose_checksum_matches_over_stale_file_data(
+        db, league, tmp_path):
+    """Production: a wrapped outbound row kept the old packet's bytes in file_data."""
+    outbound = tmp_path / "packets" / "outbound"
+    outbound.mkdir(parents=True)
+    p = store(db, league, "results_901b0102.002", "901b0102.002", at=t("02:55"), trace=False)
+    p.file_data = raw("results_late_901b0102.004")      # the row's previous occupant
+    db.commit()
+    (outbound / "901B0102.002").write_bytes(raw("results_901b0102.002"))
+    counts = attack_trace.backfill(db, tmp_path)
+    assert (counts["traced"], counts["mismatched"], counts["sightings"]) == (1, 0, 3)
+
+
+def test_nodelists_are_not_counted_as_packets(db, league, tmp_path):
+    text = b"HOST 01 ...\r\n"
+    db.add(Packet(filename="BRNODES.901", league_id=league.id, source_bbs_index="01",
+                  dest_bbs_index="00", sequence_number=0, file_size=len(text),
+                  checksum=hashlib.sha256(text).hexdigest(), file_data=text))
+    db.commit()
+    assert attack_trace.backfill(db, tmp_path)["packets"] == 0
+
+
+def test_a_relayed_hop_is_timed_by_when_the_hub_wrote_it(db, league):
+    """Node 2 attacks node 3 through the hub: 02->01 is run by the hub's game,
+    which writes the attack into 01->03. That row may be months old if its
+    filename has wrapped; processed_at is when this packet was collected."""
+    store(db, league, "attacks_901b0201.001", "901b0201.001", at=t("02:53"), taken=t("02:54"))
+    relay = store(db, league, "attacks_901b0201.001", "901b0103.500",
+                  at=datetime(2026, 1, 23), trace=False)
+    relay.processed_at, relay.downloaded_at = t("02:54"), t("03:10")
+    db.commit()
+    attack_trace.record(db, relay, raw("attacks_901b0201.001"))
+    j = next(iter(by_id(db).values()))
+    assert [(h.source_bbs, h.dest_bbs, h.at_hub) for h in j.hops] == \
+        [(2, 1, t("02:53")), (1, 3, t("02:54"))]
+    assert j.attack_at_hub == t("02:53")
 
 
 # ── the endpoint ──────────────────────────────────────────────────────────

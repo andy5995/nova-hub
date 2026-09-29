@@ -88,6 +88,15 @@ function when(stamp: string | null): string {
   return stamp.replace('T', ' ').slice(0, 19)
 }
 
+// The attacker's board clock relative to the hub's, as measured from its packets.
+function clockOffset(minutes: number | null): string {
+  if (minutes === null) return 'clock not yet measured'
+  if (minutes === 0) return 'on hub time'
+  const sign = minutes > 0 ? '+' : '-'
+  const m = Math.abs(minutes)
+  return `${sign}${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''} from hub`
+}
+
 function reached(j: AttackJourney, key: keyof AttackJourney): boolean {
   return !!j[key]
 }
@@ -272,8 +281,10 @@ watch([days, leagueId, planet, onlyMit], load)
                             <dt>MIT window</dt>
                             <dd>
                               {{ j.lost_attack_days }} day<span v-if="j.lost_attack_days !== 1">s</span>
-                              <span class="text-muted"> &mdash; written off from {{ when(j.mit_due).slice(0, 10) }}</span>
+                              <span class="text-muted"> &mdash; written off from {{ when(j.mit_due_local).slice(0, 10) }} on the attacker's clock</span>
                             </dd>
+                            <dt>Written off at</dt>
+                            <dd class="font-mono">{{ when(j.mit_due) }} <span class="text-muted">(hub clock; attacker's board {{ clockOffset(j.attacker_clock_minutes) }})</span></dd>
                           </dl>
                         </div>
                         <div>

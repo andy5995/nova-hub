@@ -79,7 +79,10 @@ async def list_attacks(
             result_delivered=_iso(j.result_delivered),
             stage=j.stage,
             lost_attack_days=j.lost_attack_days,
+            mit_due_local=_iso(j.mit_due_local),
             mit_due=_iso(j.mit_due),
+            attacker_clock_minutes=(None if j.attacker_clock is None
+                                    else int(j.attacker_clock.total_seconds() // 60)),
             mit=j.mit,
             hops=[AttackHop(is_result=h.is_result, packet_id=h.packet_id,
                             filename=h.filename, source_bbs=h.source_bbs,

@@ -12,7 +12,8 @@ figures match the lengths decoded here exactly.
     header  = u32, rising over time  +  8 bytes not yet identified
     record  = type u8 | length u16le | src u8 | dst u8 | crc u32le | payload[length]
     crc     = zlib CRC-32 without the final xor, over the *compressed* payload
-    payload = 0xFD n -> n zero bytes; any other byte is literal
+    payload = 0xFD n -> n zero bytes; 0xFD 0x00, or a final 0xFD, is a literal 0xFD;
+              any other byte is literal
 
 The 8 unidentified header bytes are not a CRC over any span of the file. They do
 not stand between us and the records, so they are left for the memory-capture
@@ -86,15 +87,21 @@ class PacketFormatError(ValueError):
 
 
 def unrle(payload: bytes) -> bytes:
+    """0xFD n is n zero bytes; 0xFD 0x00 is a literal 0xFD.
+
+    A 0xFD as the very last byte is also literal: the encoder writes a trailing
+    0xFD bare. Both cases were found in production, where 0xFD falls inside an
+    attack ID often enough to matter -- decoding it as an escape shifts the ID.
+    """
     out, i = bytearray(), 0
     while i < len(payload):
-        if payload[i] == 0xFD:
-            if i + 1 >= len(payload):
-                raise PacketFormatError("zero-run escape at end of payload")
-            out += bytes(payload[i + 1])
+        b = payload[i]
+        if b == 0xFD and i + 1 < len(payload):
+            n = payload[i + 1]
+            out += bytes(n) if n else b"\xfd"
             i += 2
         else:
-            out.append(payload[i])
+            out.append(b)
             i += 1
     return bytes(out)
 

@@ -250,7 +250,9 @@ export interface AttackJourney {
   result_delivered: string | null
   stage: AttackStage
   lost_attack_days: number
+  mit_due_local: string | null
   mit_due: string | null
+  attacker_clock_minutes: number | null
   mit: 'late' | 'overdue' | null
   hops: AttackHop[]
 }
