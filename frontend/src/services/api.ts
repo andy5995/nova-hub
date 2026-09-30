@@ -231,6 +231,7 @@ export type AttackStage =
   | 'result awaiting pickup'
   | 'awaiting result'
   | 'attack awaiting pickup'
+  | 'relay not held'
   | 'not seen'
 
 export interface AttackJourney {
@@ -253,7 +254,10 @@ export interface AttackJourney {
   mit_due_local: string | null
   mit_due: string | null
   attacker_clock_minutes: number | null
-  mit: 'late' | 'overdue' | null
+  rollover_after: string | null
+  rollover_before: string | null
+  unheld_relay_to: number | null
+  mit: 'late' | 'possible' | 'overdue' | null
   hops: AttackHop[]
 }
 
@@ -262,7 +266,7 @@ export interface AttackFilters {
   league_id?: number
   planet?: number
   attack_id?: string
-  mit?: 'late' | 'overdue' | 'any'
+  mit?: 'late' | 'possible' | 'overdue' | 'any'
   limit?: number
 }
 

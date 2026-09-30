@@ -27,7 +27,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -228,12 +228,20 @@ class Journey:
     lost_attack_days: int = DEFAULT_LOST_ATTACK_DAYS
     # The attacker's board clock minus the hub's; None if never measured.
     attacker_clock: Optional[timedelta] = None
+    # When the attacker's board rolled over into the due date, bracketed on the
+    # hub's clock by its uploads either side of that day's burned sequence number.
+    rollover: Optional[Tuple[datetime, datetime]] = None
+    # The board whose relay from the hub should be the next hop, when the hub no
+    # longer holds any packet it wrote to that board around then (see _unheld).
+    unheld_relay_to: Optional[int] = None
     hops: List[Hop] = field(default_factory=list)
 
     @property
     def stage(self) -> str:
         if self.result_delivered:
             return "result delivered"
+        if self.unheld_relay_to is not None:
+            return "relay not held"
         if self.result_at_hub:
             return "result awaiting pickup"
         if self.attack_delivered:
@@ -244,11 +252,10 @@ class Journey:
 
     @property
     def mit_due_local(self) -> Optional[datetime]:
-        """Midnight on the attacker's clock at which its board gives up.
+        """Midnight on the attacker's clock: the earliest it can give up.
 
         The game counts in dates from the attack's date, not 24-hour multiples of
-        the launch time: in production an attack launched at 23:56 was written off
-        at its board's maintenance four minutes later (league 015B, Lost Attacks 1).
+        the launch time. It does not give up *at* midnight, though -- see `mit`.
         """
         if not self.launched:
             return None
@@ -265,14 +272,36 @@ class Journey:
 
     @property
     def mit(self) -> Optional[str]:
-        """"late" if the result was handed over after the window (the game discards
-        it), "overdue" if it is past the window with no result delivered, else None."""
+        """Whether the attacker's board wrote this attack off.
+
+        It does so in its first game run of the due date (the "rollover", which
+        burns a sequence number) -- unless the result is already in its inbound,
+        which that same run imports before it checks for lost attacks. Shown on
+        the rig: a result waiting at the first run of the next day is accepted;
+        one arriving after a run of that day is "Late ... Packet Deleted". And
+        production's boards roll over when their schedule says, not at midnight:
+        EOTS at about 00:43 its time, The Eclipse anywhere from minutes to hours
+        after.
+
+          "late"      handed over after the rollover: discarded
+          "possible"  handed over while it was happening, or with no rollover seen
+                      yet -- only the attacker's own log can say
+          "overdue"   past the due date with no result handed over
+          None        in time (possibly after midnight, but before the rollover)
+        """
         due = self.mit_due
-        if due is None:
+        if due is None or self.unheld_relay_to is not None:
             return None
-        if self.result_delivered:
-            return "late" if self.result_delivered >= due else None
-        return "overdue" if _now() >= due else None
+        if self.result_delivered is None:
+            return "overdue" if _now() >= due else None
+        if self.result_delivered < due:
+            return None
+        if self.rollover is None:
+            return "possible"
+        opened, closed = self.rollover
+        if self.result_delivered <= max(opened, due):
+            return None
+        return "late" if self.result_delivered >= closed else "possible"
 
 
 # ── board clocks ──────────────────────────────────────────────────────────
@@ -317,6 +346,87 @@ def _clock_at(obs: List[tuple], when: datetime) -> Optional[timedelta]:
                   key=lambda o: abs((o[0] - when).total_seconds()))[:CLOCK_SAMPLES]
     best = max(offset for _, offset in near)
     return timedelta(seconds=round(best / _QUARTER_HOUR) * _QUARTER_HOUR)
+
+
+# ── rollovers ─────────────────────────────────────────────────────────────
+# Once a game day, the first run of the new date burns one sequence number on
+# each of a board's routes before writing anything (rig: .009 and .010 consumed
+# by two rollovers, the second then writing .011). So on the attacker's route to
+# the hub, the uploads either side of the first skipped number after the due
+# date bracket the moment it rolled over. Upload rows are a true history --
+# each upload gets its own row -- which the hub's own routes were not.
+ROLLOVER_SEARCH = timedelta(days=3)
+
+
+def _rollovers(db: Session, out: List["Journey"], hub: Optional[int]) -> None:
+    wanted: Dict[tuple, List[Journey]] = {}
+    for j in out:
+        if j.mit_due and j.result_delivered and j.result_delivered >= j.mit_due \
+                and j.from_planet != hub and hub is not None:
+            wanted.setdefault((j.league_id, j.from_planet), []).append(j)
+    for (league_id, planet), js in wanted.items():
+        lo = min(j.mit_due for j in js) - ROLLOVER_SEARCH
+        hi = max(j.mit_due for j in js) + ROLLOVER_SEARCH
+        uploads = (db.query(Packet.sequence_number, Packet.uploaded_at)
+                   .filter(Packet.league_id == league_id,
+                           Packet.source_bbs_index == f"{planet:02X}",
+                           Packet.dest_bbs_index == f"{hub:02X}",
+                           Packet.uploaded_at >= lo, Packet.uploaded_at <= hi)
+                   .order_by(Packet.uploaded_at).all())
+        for j in js:
+            for (a, at), (b, bt) in zip(uploads, uploads[1:]):
+                if bt > j.mit_due and (b - a) % 1000 >= 2:
+                    j.rollover = (at, bt)
+                    break
+
+
+# ── history the hub no longer holds ───────────────────────────────────────
+# Until 6be2238 the collector reused a row whenever a filename recurred, so every
+# packet the hub's game wrote to a board was overwritten a thousand packets
+# later, and with it the relay hop of whatever it carried. A journey that stops
+# where such a relay should be is then not evidence of anything. It is told apart
+# by the route itself: the hub's game writes to a board within minutes of having
+# something for it, in the first packet it writes to that board. If the row
+# created for that packet was later reused for another -- production's slots
+# kept their creation time, months before what they now hold -- the route has
+# lost its history there. If it still holds its own packet, as every row will
+# from now on, a missing hop is a real miss.
+RELAY_WINDOW = timedelta(hours=6)
+# A row the collector created is written in the same instant; one written again
+# later was reused. (013B, 11 Jan: rows created 03:34-04:38 rewritten at 07:32.)
+REWRITTEN_AFTER = timedelta(minutes=5)
+
+
+def _unheld(db: Session, out: List["Journey"], hub: Optional[int]) -> None:
+    if hub is None:
+        return
+    for j in out:
+        if j.result_delivered:
+            continue
+        if j.result_at_hub:
+            since, to = j.result_at_hub, j.from_planet
+        elif j.to_planet == hub and j.attack_delivered:
+            since, to = j.attack_delivered, j.from_planet   # the hub's own board answered
+        elif j.attack_at_hub and not j.attack_delivered:
+            since, to = j.attack_at_hub, j.to_planet
+        else:
+            continue
+        if to == hub or _now() - since < RELAY_WINDOW:
+            continue
+        # The relay goes out in the first packet the hub writes to that board
+        # after `since`. Held means that row still holds what it was created
+        # with: a reused slot kept its creation time and was written again later.
+        first = (db.query(Packet.uploaded_at, Packet.processed_at)
+                 .filter(Packet.league_id == j.league_id,
+                         Packet.source_bbs_index == f"{hub:02X}",
+                         Packet.dest_bbs_index == f"{to:02X}",
+                         Packet.uploaded_at >= since,
+                         Packet.uploaded_at <= since + RELAY_WINDOW)
+                 .order_by(Packet.uploaded_at).first())
+        held = first is not None and first.processed_at is not None and \
+            first.processed_at - first.uploaded_at < REWRITTEN_AFTER
+        if not held:
+            j.unheld_relay_to = to
 
 
 def _bbs(hexstr: str) -> Optional[int]:
@@ -389,6 +499,8 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
         when = j.attack_at_hub or j.launched
         if when:
             j.attacker_clock = _clock_at(clocks.get((j.league_id, j.from_planet)), when)
+    _rollovers(db, out, hub)
+    _unheld(db, out, hub)
     out.sort(key=lambda j: j.launched or j.attack_at_hub or datetime.min, reverse=True)
     return out[:limit]
 

@@ -67,12 +67,13 @@ const shown = computed(() =>
 )
 
 const counts = computed(() => {
-  const c = { total: journeys.value.length, delivered: 0, waiting: 0, late: 0, overdue: 0 }
+  const c = { total: journeys.value.length, delivered: 0, waiting: 0, late: 0, overdue: 0, possible: 0 }
   for (const j of journeys.value) {
     if (j.stage === 'result delivered') c.delivered++
-    else c.waiting++
+    else if (j.stage !== 'relay not held') c.waiting++
     if (j.mit === 'late') c.late++
     if (j.mit === 'overdue') c.overdue++
+    if (j.mit === 'possible') c.possible++
   }
   return c
 })
@@ -107,13 +108,16 @@ function stepTitle(j: AttackJourney, step: { key: keyof AttackJourney; label: st
 }
 
 function stageClass(j: AttackJourney): string {
+  if (j.mit === 'possible') return 'badge-warning'
   if (j.mit) return 'badge-danger'
+  if (j.stage === 'relay not held') return 'badge-info'
   return j.stage === 'result delivered' ? 'badge-success' : 'badge-warning'
 }
 
 function mitText(j: AttackJourney): string {
   if (j.mit === 'late') return 'MIT: result arrived too late'
   if (j.mit === 'overdue') return 'MIT: past the window'
+  if (j.mit === 'possible') return 'Possible MIT: result arrived as the attacker rolled over'
   return ''
 }
 
@@ -196,7 +200,7 @@ watch([days, leagueId, planet, onlyMit], load)
           <button class="card tile tile-mit" :class="{ on: onlyMit }" @click="onlyMit = !onlyMit"
                   title="Show only attacks the attacker's game will have written off">
             <span class="tile-n">{{ counts.late + counts.overdue }}</span>
-            <span class="text-muted">Missing In Transit</span>
+            <span class="text-muted">Missing In Transit<template v-if="counts.possible"> (+{{ counts.possible }} possible)</template></span>
           </button>
         </div>
 
@@ -261,7 +265,8 @@ watch([days, leagueId, planet, onlyMit], load)
                       </span>
                     </td>
                     <td>
-                      <span class="badge" :class="stageClass(j)">{{ j.stage }}</span>
+                      <span class="badge" :class="stageClass(j)"
+                            :title="j.stage === 'relay not held' ? `The hub no longer holds the packets it wrote to planet ${j.unheld_relay_to} around then (older hub versions overwrote them), so this journey's next hop cannot be shown. It is not evidence of a loss.` : ''">{{ j.stage }}</span>
                       <div v-if="j.mit" class="mit-text">{{ mitText(j) }}</div>
                     </td>
                     <td class="font-mono text-muted">{{ j.attack_id }}</td>
@@ -283,8 +288,15 @@ watch([days, leagueId, planet, onlyMit], load)
                               {{ j.lost_attack_days }} day<span v-if="j.lost_attack_days !== 1">s</span>
                               <span class="text-muted"> &mdash; written off from {{ when(j.mit_due_local).slice(0, 10) }} on the attacker's clock</span>
                             </dd>
-                            <dt>Written off at</dt>
-                            <dd class="font-mono">{{ when(j.mit_due) }} <span class="text-muted">(hub clock; attacker's board {{ clockOffset(j.attacker_clock_minutes) }})</span></dd>
+                            <dt>Due</dt>
+                            <dd class="font-mono">{{ when(j.mit_due) }} <span class="text-muted">(earliest, hub clock; attacker's board {{ clockOffset(j.attacker_clock_minutes) }})</span></dd>
+                            <template v-if="j.rollover_after">
+                              <dt>Attacker rolled over</dt>
+                              <dd class="font-mono">
+                                {{ when(j.rollover_after) }} &ndash; {{ when(j.rollover_before) }}
+                                <span class="text-muted">(hub clock; between its uploads either side of the day's skipped sequence number &mdash; a result in before this counts)</span>
+                              </dd>
+                            </template>
                           </dl>
                         </div>
                         <div>

@@ -36,7 +36,7 @@ async def list_attacks(
     attack_id: Optional[str] = Query(None, pattern="^[0-9a-fA-F]{1,16}$",
                                      description="ID or a prefix of it; ignores `days`"),
     stage: Optional[str] = Query(None),
-    mit: Optional[str] = Query(None, pattern="^(late|overdue|any)$"),
+    mit: Optional[str] = Query(None, pattern="^(late|possible|overdue|any)$"),
     limit: int = Query(500, ge=1, le=2000),
     current_user: SysopUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -48,8 +48,9 @@ async def list_attacks(
     - `league_id`, `planet`: filters; `planet` matches either side
     - `attack_id`: find one attack by ID, whatever its age
     - `stage`: only attacks whose journey stopped at this stage
-    - `mit`: `late` (result handed over after the MIT window), `overdue` (past the
-      window, no result delivered), or `any`
+    - `mit`: `late` (result handed over after the attacker's board rolled into the
+      due date, so discarded), `possible` (handed over while it rolled over, or no
+      rollover seen yet), `overdue` (past the due date, no result delivered), or `any`
     """
     hub_index = get_config().get("hub", {}).get("bbs_index", "01")
     since = None if attack_id else datetime.utcnow() - timedelta(days=days)
@@ -83,6 +84,9 @@ async def list_attacks(
             mit_due=_iso(j.mit_due),
             attacker_clock_minutes=(None if j.attacker_clock is None
                                     else int(j.attacker_clock.total_seconds() // 60)),
+            rollover_after=_iso(j.rollover[0]) if j.rollover else None,
+            rollover_before=_iso(j.rollover[1]) if j.rollover else None,
+            unheld_relay_to=j.unheld_relay_to,
             mit=j.mit,
             hops=[AttackHop(is_result=h.is_result, packet_id=h.packet_id,
                             filename=h.filename, source_bbs=h.source_bbs,

@@ -63,6 +63,8 @@ def store(db, league, fixture, filename, *, at, taken=None, trace=True):
                source_bbs_index=src, dest_bbs_index=dst,
                sequence_number=int(filename[-3:]), file_size=len(content),
                checksum=hashlib.sha256(content).hexdigest(), uploaded_at=at)
+    if src == HUB:
+        p.processed_at = at          # the collector's time for what the hub wrote
     if taken:
         if dst == HUB:
             p.processed_at = taken
@@ -76,11 +78,21 @@ def store(db, league, fixture, filename, *, at, taken=None, trace=True):
     return p
 
 
+def upload(db, league, seq, at, source="02"):
+    """A packet a board uploaded, for its sequence number and time alone."""
+    db.add(Packet(filename=f"901B{source}01.{seq:03d}", league_id=league.id,
+                  source_bbs_index=source, dest_bbs_index=HUB, sequence_number=seq,
+                  file_size=0, uploaded_at=at))
+    db.commit()
+
+
 def rig_session(db, league):
     """The two rounds, with the times the hub would have seen."""
     store(db, league, "attacks_901b0201.001", "901b0201.001", at=t("02:53"), taken=t("02:55"))
     store(db, league, "results_901b0102.002", "901b0102.002", at=t("02:55"), taken=t("02:57"))
     store(db, league, "attacks_mit_901b0201.002", "901b0201.002", at=t("03:02"), taken=t("03:04"))
+    # Node 2 rolls into the 30th, burning .003 -- and gives up on the two.
+    upload(db, league, 4, t("00:12", day=30))
     # Collected by node 2 three days later -- after it had given up.
     store(db, league, "results_late_901b0102.004", "901b0102.004", at=t("03:04"),
           taken=t("03:05", day=2, month=10))
@@ -164,11 +176,41 @@ def test_the_window_closes_at_midnight_on_the_attackers_clock(db, league):
           at=t("03:02") - ahead, taken=t("03:04") - ahead)
     store(db, league, "results_late_901b0102.004", "901b0102.004",
           at=t("03:04") - ahead, taken=t("15:00"))
+    upload(db, league, 4, t("14:20"))      # its rollover into the 30th, its clock
     got = list(by_id(db).values())
     assert {x.attacker_clock for x in got} == {ahead}
     assert {x.mit_due_local for x in got} == {datetime(2026, 9, 30)}
     assert {x.mit_due for x in got} == {datetime(2026, 9, 29, 14, 0)}
     assert {x.mit for x in got} == {"late"}
+
+
+def _second_round(db, league, result_taken):
+    store(db, league, "attacks_mit_901b0201.002", "901b0201.002", at=t("03:02"), taken=t("03:04"))
+    store(db, league, "results_late_901b0102.004", "901b0102.004", at=t("03:04"),
+          taken=result_taken)
+    return {x.mit for x in by_id(db).values()}
+
+
+def test_a_result_taken_after_midnight_but_before_the_rollover_counts(db, league):
+    """Production, 3 Sep: The Eclipse took a result at 00:06, its next run wrote
+    .415, and only after that did it burn .416 rolling over. The rig confirms a
+    result already in the inbound at the rollover run is imported first."""
+    upload(db, league, 3, t("00:08", day=30))
+    upload(db, league, 5, t("00:32", day=30))
+    assert _second_round(db, league, t("00:06", day=30)) == {None}
+
+
+def test_a_result_taken_while_the_board_rolled_over_is_possible(db, league):
+    """Production, 6 Sep: the burn fell between 23:56 and 00:25 and the result was
+    taken at 00:23. Packets cannot say which came first; the board's log can."""
+    upload(db, league, 3, t("23:56"))
+    upload(db, league, 5, t("00:25", day=30))
+    assert _second_round(db, league, t("00:23", day=30)) == {"possible"}
+    assert by_id(db)["ca9564ee5fb676f8"].rollover == (t("23:56"), t("00:25", day=30))
+
+
+def test_without_a_rollover_seen_a_result_after_midnight_is_only_possible(db, league):
+    assert _second_round(db, league, t("05:00", day=30)) == {"possible"}
 
 
 def test_no_result_past_the_window_is_overdue(db, league, monkeypatch):
@@ -315,3 +357,36 @@ def test_endpoint_filters_to_mit(api, db, league):
 
 def test_endpoint_rejects_an_id_that_is_not_hex(api):
     assert api.get(BASE, params={"attack_id": "nope"}).status_code == 422
+
+
+# ── history the hub no longer holds ───────────────────────────────────────
+def test_a_missing_relay_on_a_route_with_no_packets_then_is_not_called_mit(db, league, monkeypatch):
+    """Production: 45 of 015B's attacks stop at the hub because the packet that
+    relayed them was overwritten by an older collector. Nothing survives on that
+    route from those hours, so the hub says so instead of crying MIT."""
+    store(db, league, "attacks_mit_901b0201.002", "901b0201.002", at=t("03:02"), taken=t("03:04"))
+    monkeypatch.setattr(attack_trace, "_now", lambda: datetime(2026, 10, 10))  # past the default 7 days
+    # The hub's game resolved them for its own board; its reply to node 2 is gone.
+    got = list(by_id(db).values())
+    assert {(x.stage, x.mit, x.unheld_relay_to) for x in got} == {("relay not held", None, 2)}
+
+
+def test_a_missing_relay_on_a_route_that_kept_its_packets_is_mit(db, league, monkeypatch):
+    store(db, league, "attacks_mit_901b0201.002", "901b0201.002", at=t("03:02"), taken=t("03:04"))
+    db.add(Packet(filename="901B0102.009", league_id=league.id, source_bbs_index=HUB,
+                  dest_bbs_index="02", sequence_number=9, file_size=0,
+                  uploaded_at=t("03:05"), processed_at=t("03:05")))   # carried something else
+    db.commit()
+    monkeypatch.setattr(attack_trace, "_now", lambda: datetime(2026, 10, 10))  # past the default 7 days
+    got = list(by_id(db).values())
+    assert {(x.stage, x.mit) for x in got} == {("awaiting result", "overdue")}
+
+
+def test_a_reused_slot_from_months_before_does_not_count_as_held(db, league, monkeypatch):
+    store(db, league, "attacks_mit_901b0201.002", "901b0201.002", at=t("03:02"), taken=t("03:04"))
+    db.add(Packet(filename="901B0102.009", league_id=league.id, source_bbs_index=HUB,
+                  dest_bbs_index="02", sequence_number=9, file_size=0,
+                  uploaded_at=datetime(2026, 6, 7), processed_at=t("03:05")))
+    db.commit()
+    monkeypatch.setattr(attack_trace, "_now", lambda: datetime(2026, 10, 10))
+    assert {x.stage for x in by_id(db).values()} == {"relay not held"}

@@ -43,5 +43,10 @@ class AttackJourney(BaseModel):
     mit_due_local: Optional[str] = None
     mit_due: Optional[str] = None
     attacker_clock_minutes: Optional[int] = None
-    mit: Optional[str] = None       # "late" | "overdue" | None
+    # Hub clock: the attacker's uploads either side of its rollover into the due date.
+    rollover_after: Optional[str] = None
+    rollover_before: Optional[str] = None
+    mit: Optional[str] = None       # "late" | "possible" | "overdue" | None
+    # Set when the stage is "relay not held": the board the hub's missing relay was for.
+    unheld_relay_to: Optional[int] = None
     hops: List[AttackHop] = []
