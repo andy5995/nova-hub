@@ -41,6 +41,10 @@ SESSION = [
     ("attacks_901b0201.001", "901B0201.001", at(9, 29, 2, 53), at(9, 29, 2, 55)),
     ("results_901b0102.002", "901B0102.002", at(9, 29, 2, 55), at(9, 29, 2, 57)),
     ("attacks_mit_901b0201.002", "901B0201.002", at(9, 29, 3, 2), at(9, 29, 3, 4)),
+    # Node 2's first upload after rolling into the due date: its rollovers of
+    # 30 Sep - 2 Oct burned .003-.005, so the hub sees the gap and knows the late
+    # result below arrived after the attacks were written off.
+    ("rollover_901b0201.006", "901B0201.006", at(10, 2, 3, 3), at(10, 2, 3, 4)),
     ("results_late_901b0102.004", "901B0102.004", at(9, 29, 3, 4), at(10, 2, 3, 5)),
 ]
 
