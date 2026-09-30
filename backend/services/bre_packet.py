@@ -53,17 +53,42 @@ TRAILER = 0x0F
 INDIV_ATTACK = 0x07
 ATTACK_RESULT = 0x08
 
-# Names as the game's /DETAILED transcript prints them.
+# Names as the game's /DETAILED transcript prints them, matched to type numbers
+# by decompressed size (every type has exactly one across production's 10,322
+# BRE packets) and by which answers which in traffic. The hub keeps those names
+# in processing_run_items.
+#
+# The ops are not traceable as attacks are: they carry realm letters, player IDs
+# and planets but no unique ID, and a result echoes its op's first ten bytes
+# behind a timestamp -- two identical Bombing Ops are byte for byte the same.
+# They also have no forces to go missing. A Message is player mail; it is never
+# to be decoded for display.
 RECORD_TYPES = {
-    0x01: "Recon Request",
-    0x02: "Recon Update",
-    INDIV_ATTACK: "Indiv Attack",
-    ATTACK_RESULT: "Attack Results",
-    0x0A: "Configupdate",
-    0x0D: "Player List",
-    0x11: "Dummy Data",
-    0x12: "Routing List",
-    0x1A: "Time Check",
+    0x01: "Recon Request",          # 2
+    0x02: "Recon Update",           # 1448
+    0x03: "Terrorist Op",           # 18
+    0x04: "Terrorist Result",       # 22
+    0x05: "Bombing Op",             # 10
+    0x06: "Bombing Result",         # 10
+    INDIV_ATTACK: "Indiv Attack",   # 875
+    ATTACK_RESULT: "Attack Results",  # 903
+    0x09: "Message",                # 2659
+    0x0A: "Configupdate",           # 240
+    0x0B: "Gooie Attack",           # 12
+    0x0C: "Gooie Results",          # 7
+    0x0D: "Player List",            # 783
+    0x0E: "Special Op",             # 15
+    0x0F: "Special Result",         # 15
+    # 240, Configupdate layout, only in the coordinator's first packet of each
+    # game (013B, 014B, and 015B's 8 Jul restart). Named by inference.
+    0x10: "Game Start",
+    0x11: "Dummy Data",             # 2
+    0x12: "Routing List",           # 257
+    0x13: "Spy Report",             # 74
+    0x14: "News Data",              # 258
+    0x17: "Spy Guy",                # 3
+    # 0x18: 52 bytes, seen once (013B). Unnamed.
+    0x1A: "Time Check",             # 8
 }
 
 # Fitted, not assumed: three known wall-clock times on the rig decode to the
