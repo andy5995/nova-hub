@@ -390,3 +390,54 @@ def test_a_reused_slot_from_months_before_does_not_count_as_held(db, league, mon
     db.commit()
     monkeypatch.setattr(attack_trace, "_now", lambda: datetime(2026, 10, 10))
     assert {x.stage for x in by_id(db).values()} == {"relay not held"}
+
+
+# ── the admin reveal ──────────────────────────────────────────────────────
+def forces_round(db, league):
+    for fixture, name, at in (("forces_901b0201.013", "901b0201.013", t("11:10", day=30)),
+                              ("forces_results_901b0102.010", "901b0102.010", t("11:19", day=30))):
+        p = store(db, league, fixture, name, at=at)
+        p.file_data = raw(fixture)
+    db.commit()
+
+
+def as_user(admin):
+    from main import app, service_app, management_app
+    from backend.core.security import get_current_user
+    from backend.models.database import SysopUser
+    for a in (app, service_app, management_app):
+        a.dependency_overrides[get_current_user] = lambda: SysopUser(
+            id=2, username="sysop", hashed_password="x", is_superuser=admin)
+
+
+def test_an_admin_can_reveal_what_an_attack_sent_and_cost(api, db, league):
+    forces_round(db, league)
+    got = api.get(BASE + "17c8cce828542b81/forces").json()
+    assert got["sent"] == {"troopers": 21, "tanks": 17, "bombers": 12}
+    assert got["resolved"] is True
+    assert got["lost"] == {"troopers": 3, "tanks": 3, "bombers": 2}
+    assert got["returned"] == {"troopers": 18, "tanks": 14, "bombers": 10}
+    assert got["defenders_destroyed"] == 8
+
+
+def test_an_attack_not_yet_resolved_reveals_only_what_it_sent(api, db, league):
+    store(db, league, "forces_901b0201.013", "901b0201.013", at=t("11:10", day=30)) \
+        .file_data = raw("forces_901b0201.013")
+    db.commit()
+    got = api.get(BASE + "721117a886d8fa0f/forces").json()
+    assert got["sent"]["troopers"] == 33 and got["resolved"] is False
+    assert got["lost"] is None and got["returned"] is None
+
+
+def test_only_an_admin_can_reveal_forces(api, db, league):
+    forces_round(db, league)
+    as_user(admin=False)
+    assert api.get(BASE + "17c8cce828542b81/forces").status_code == 403
+
+
+def test_forces_for_an_attack_the_hub_never_carried(api, db, league):
+    assert api.get(BASE + "0123456789abcdef/forces").status_code == 404
+
+
+def test_forces_needs_a_whole_attack_id(api):
+    assert api.get(BASE + "17c8cce8/forces").status_code == 422

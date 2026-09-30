@@ -270,9 +270,22 @@ export interface AttackFilters {
   limit?: number
 }
 
+// Admin only, fetched per attack on request: hidden game state.
+export interface AttackForces {
+  attack_id: string
+  sent: Record<'troopers' | 'tanks' | 'bombers', number>
+  resolved: boolean
+  loss_percent: number | null
+  lost: Record<'troopers' | 'tanks' | 'bombers', number> | null
+  returned: Record<'troopers' | 'tanks' | 'bombers', number> | null
+  defenders_destroyed: number | null
+}
+
 export const attacksApi = {
   list: (params: AttackFilters = {}) =>
     api.get<AttackJourney[]>('/attacks/', { params }),
+  forces: (attackId: string) =>
+    api.get<AttackForces>(`/attacks/${attackId}/forces`),
 }
 
 // Alerts API functions

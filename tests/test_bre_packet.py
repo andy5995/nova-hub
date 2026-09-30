@@ -121,3 +121,31 @@ def test_a_literal_fd_survives_decompression():
 def test_truncation_is_an_error():
     with pytest.raises(bp.PacketFormatError):
         bp.parse(load("attacks_901b0201.001")[:100])
+
+
+# ── forces: admin reveal only ─────────────────────────────────────────────
+# One rig session on 7 Oct: three attacks from node 2 on the hub's board, and
+# node 2's own report of each result -- which is what these figures are.
+def _forces(name):
+    return {bp.attack(r).attack_id: bp.forces(r) for r in bp.parse(load(name))
+            if r.type in (bp.INDIV_ATTACK, bp.ATTACK_RESULT)}
+
+
+def test_forces_sent_are_troopers_tanks_and_bombers():
+    got = _forces("forces_901b0201.013")
+    assert [(f.troopers, f.tanks, f.bombers) for f in got.values()] == \
+        [(21, 17, 12), (33, 0, 0), (9, 0, 0)]
+    assert all(f.loss_fraction is None and f.lost() is None for f in got.values())
+
+
+def test_a_result_gives_the_losses_the_attackers_report_printed():
+    got = _forces("forces_results_901b0102.010")
+    # "You lost 3 Troopers, 3 Tanks, and 2 Bombers!"  "You destroyed 8 Troopers!"
+    assert got["17c8cce828542b81"].lost() == {"troopers": 3, "tanks": 3, "bombers": 2}
+    assert got["17c8cce828542b81"].defenders_destroyed == 8
+    # "You lost 7 Troopers!"  "You destroyed nothing!"
+    assert got["721117a886d8fa0f"].lost()["troopers"] == 7
+    assert got["721117a886d8fa0f"].defenders_destroyed == 0
+    # Quick Strike: "You lost 2 Troopers!"
+    assert got["4a85ed3242ec561c"].lost()["troopers"] == 2
+

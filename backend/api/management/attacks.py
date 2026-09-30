@@ -6,17 +6,21 @@ backend/services/bre_packet.py for how an attack is read out of a packet.
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query
 from sqlalchemy.orm import Session
 
 from backend.core.config import get_config
 from backend.core.database import get_db
-from backend.core.security import get_current_user
+from backend.core.security import get_current_user, require_admin
+from backend.logging_config import get_logger
 from backend.models.database import League, SysopUser
-from backend.schemas.attacks import AttackHop, AttackJourney
+from backend.schemas.attacks import AttackForces, AttackHop, AttackJourney
 from backend.services import attack_trace
 
 router = APIRouter()
+logger = get_logger(context="management_attacks")
 
 DEFAULT_WINDOW_DAYS = 14
 MAX_WINDOW_DAYS = 365
@@ -95,3 +99,34 @@ async def list_attacks(
         )
         for j in found[:limit]
     ]
+
+
+@router.get("/{attack_id}/forces", response_model=AttackForces,
+            summary="Reveal an Attack's Forces (admin)")
+async def reveal_forces(
+    attack_id: str = PathParam(..., pattern="^[0-9a-fA-F]{16}$"),
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Troopers, tanks and bombers sent, and once resolved, the losses both sides took.
+
+    Hidden game state, so admin only, one attack per request, and never part of
+    the listing: the UI fetches it only when the admin clicks to reveal. Each
+    reveal is logged. Jets are not mapped yet.
+    """
+    data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
+    f = attack_trace.forces(db, attack_id, data_dir)
+    if f is None:
+        raise HTTPException(status_code=404, detail="No stored packet holds this attack")
+    logger.info(f"Attack {attack_id.lower()} forces revealed to {current_user.username}")
+    sent = {"troopers": f.troopers, "tanks": f.tanks, "bombers": f.bombers}
+    lost = f.lost()
+    return AttackForces(
+        attack_id=attack_id.lower(),
+        sent=sent,
+        resolved=lost is not None,
+        loss_percent=None if f.loss_fraction is None else round(f.loss_fraction * 100, 1),
+        lost=lost,
+        returned=None if lost is None else {u: sent[u] - lost[u] for u in sent},
+        defenders_destroyed=f.defenders_destroyed,
+    )

@@ -1,9 +1,11 @@
 """Schemas for the attack-tracing view.
 
-No unit counts anywhere: an admin who also plays must not learn an attack's
-strength from the hub. What is here identifies an attack and times its journey.
+No unit counts in the listing: an admin who also plays must not learn an
+attack's strength from the hub. What is there identifies an attack and times its
+journey. The one exception is AttackForces, which only an admin can fetch, one
+attack at a time, by clicking to reveal it.
 """
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -50,3 +52,14 @@ class AttackJourney(BaseModel):
     # Set when the stage is "relay not held": the board the hub's missing relay was for.
     unheld_relay_to: Optional[int] = None
     hops: List[AttackHop] = []
+
+
+class AttackForces(BaseModel):
+    """Admin only, on request: what an attack sent and, once resolved, what it cost."""
+    attack_id: str
+    sent: Dict[str, int]                  # troopers, tanks, bombers
+    resolved: bool                        # False: only the attack has been seen
+    loss_percent: Optional[float] = None  # the same share of every unit type
+    lost: Optional[Dict[str, int]] = None
+    returned: Optional[Dict[str, int]] = None
+    defenders_destroyed: Optional[int] = None   # defending troopers

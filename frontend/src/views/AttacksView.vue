@@ -12,12 +12,18 @@
  * game's rule is mechanical -- no result by the league's "Days for Lost Attacks"
  * and the attack is written off, and a result arriving after that is discarded.
  *
- * Unit counts never reach this page. They are hidden game state, and nothing
- * here needs them to tell one attack from another.
+ * Unit counts are not in the listing. They are hidden game state, and nothing
+ * here needs them to tell one attack from another. An admin can reveal one
+ * attack's forces by clicking for them -- never by default, so an admin who also
+ * plays does not see them by accident. Others are not offered the button, and
+ * the server refuses them anyway.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { attacksApi, leaguesApi, type AttackJourney } from '@/services/api'
+import { attacksApi, leaguesApi, type AttackForces, type AttackJourney } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -82,6 +88,33 @@ function toggle(id: string) {
   const next = new Set(expanded.value)
   next.has(id) ? next.delete(id) : next.add(id)
   expanded.value = next
+}
+
+// Admin reveal: fetched only on click, forgotten when hidden.
+const UNITS = ['troopers', 'tanks', 'bombers'] as const
+const forces = ref<Record<string, AttackForces>>({})
+const forcesLoading = ref<string | null>(null)
+const forcesError = ref<Record<string, string>>({})
+
+async function reveal(id: string) {
+  forcesLoading.value = id
+  const errs = { ...forcesError.value }
+  delete errs[id]
+  try {
+    const { data } = await attacksApi.forces(id)
+    forces.value = { ...forces.value, [id]: data }
+  } catch (e: any) {
+    errs[id] = e?.response?.data?.detail || 'Could not reveal forces'
+  } finally {
+    forcesError.value = errs
+    forcesLoading.value = null
+  }
+}
+
+function hide(id: string) {
+  const next = { ...forces.value }
+  delete next[id]
+  forces.value = next
 }
 
 function when(stamp: string | null): string {
@@ -319,6 +352,54 @@ watch([days, leagueId, planet, onlyMit], load)
                               </tr>
                             </tbody>
                           </table>
+                          <div v-if="authStore.isAdmin" class="reveal">
+                            <template v-if="forces[j.attack_id]">
+                              <h3>
+                                Forces
+                                <button class="btn btn-sm btn-secondary" @click="hide(j.attack_id)">Hide</button>
+                              </h3>
+                              <table class="table compact forces">
+                                <thead>
+                                  <tr>
+                                    <th></th>
+                                    <th v-for="u in UNITS" :key="u">{{ u }}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr>
+                                    <td class="text-muted">sent</td>
+                                    <td v-for="u in UNITS" :key="u" class="font-mono">{{ forces[j.attack_id].sent[u] }}</td>
+                                  </tr>
+                                  <template v-if="forces[j.attack_id].lost">
+                                    <tr>
+                                      <td class="text-muted">lost</td>
+                                      <td v-for="u in UNITS" :key="u" class="font-mono">{{ forces[j.attack_id].lost![u] }}</td>
+                                    </tr>
+                                    <tr>
+                                      <td class="text-muted">returned</td>
+                                      <td v-for="u in UNITS" :key="u" class="font-mono">{{ forces[j.attack_id].returned![u] }}</td>
+                                    </tr>
+                                  </template>
+                                </tbody>
+                              </table>
+                              <p class="text-muted small">
+                                <template v-if="forces[j.attack_id].resolved">
+                                  Attacker lost {{ forces[j.attack_id].loss_percent }}% of each unit type;
+                                  destroyed {{ forces[j.attack_id].defenders_destroyed }} defending trooper<span v-if="forces[j.attack_id].defenders_destroyed !== 1">s</span>.
+                                </template>
+                                <template v-else>No result seen yet, so no outcome.</template>
+                                Jets are not decoded yet.
+                              </p>
+                            </template>
+                            <template v-else>
+                              <button class="btn btn-sm btn-secondary" :disabled="forcesLoading === j.attack_id"
+                                      @click="reveal(j.attack_id)">
+                                {{ forcesLoading === j.attack_id ? 'Revealing…' : 'Reveal forces (admin)' }}
+                              </button>
+                              <span class="text-muted small"> hidden game state &mdash; each reveal is logged</span>
+                              <div v-if="forcesError[j.attack_id]" class="text-danger small">{{ forcesError[j.attack_id] }}</div>
+                            </template>
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -495,6 +576,20 @@ tr.mit td:first-child {
 
 .detail dt {
   color: var(--color-text-muted);
+}
+
+.reveal {
+  margin-top: 1rem;
+}
+
+.reveal h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.table.forces {
+  width: auto;
 }
 
 .table.compact td,

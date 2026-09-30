@@ -39,6 +39,8 @@ the hub carried.
 
 Do not surface unit counts to anyone who also plays. Planets, realm letters, the
 ID and the timestamps identify an attack; its strength is hidden game state.
+`forces()` reads it for the one exception: an admin who asks, per attack, by
+clicking to reveal it -- so an admin who plays never sees it by accident.
 """
 import datetime
 import struct
@@ -101,7 +103,9 @@ _ATTACKER = 0          # realm letter on the sending planet
 _FROM_PLANET = 1
 _TO_PLANET = 2
 _TARGET = 7            # realm letter on the target planet
-_TROOPERS = 12         # i32; jets/tanks/bombers presumably follow, not yet varied
+_TROOPERS = 12         # i32
+_TANKS = 20            # i32; 16 is presumably jets, never sent on the rig (they need carriers)
+_BOMBERS = 24          # i32
 _STAMP = 859           # 6-byte Real; attack: sender's session start, result: resolved
 _NORMAL = 866          # 1 = Normal attack, 0 = Quick Strike (Extended not yet seen)
 _ID = 867              # 8 bytes, unique per attack, echoed in the result
@@ -216,6 +220,49 @@ def attack(record: Record) -> Attack:
 def troopers(record: Record) -> int:
     """Kept apart from `attack()` on purpose: this is hidden game state."""
     return struct.unpack_from("<i", record.data, _TROOPERS)[0]
+
+
+@dataclass
+class Forces:
+    """What an attack sent, and -- read from its result -- what it cost."""
+    troopers: int
+    tanks: int
+    bombers: int
+    loss_fraction: Optional[float] = None
+    defenders_destroyed: Optional[int] = None
+
+    def lost(self) -> Optional[dict]:
+        """The game loses the same fraction of every unit type, rounded half up.
+
+        Checked against the attacker's report for 21 troopers + 17 tanks + 12
+        bombers (lost 3, 3, 2), 33 troopers (7), 9 troopers (2) and 7 (2).
+        """
+        if self.loss_fraction is None:
+            return None
+        return {unit: int(n * self.loss_fraction + 0.5) for unit, n in
+                (("troopers", self.troopers), ("tanks", self.tanks),
+                 ("bombers", self.bombers))}
+
+
+# Offsets into the 28 bytes a result appends to the echoed attack.
+_DESTROYED = 1         # i32, defending troopers killed ("You destroyed 8 Troopers!")
+_LOSS = 21             # 6-byte Real, fraction of each unit type the attacker lost
+# Byte 0 was 1 in every result seen, all of them FAILUREs; success is not mapped.
+
+
+def forces(record: Record) -> Forces:
+    """Hidden game state: only ever for an explicit admin reveal, never a listing."""
+    d = record.data
+    if record.type not in (INDIV_ATTACK, ATTACK_RESULT) or len(d) < ATTACK_SIZE:
+        raise PacketFormatError(f"{record.name} is not an individual attack")
+    troopers, tanks, bombers = (struct.unpack_from("<i", d, o)[0]
+                                for o in (_TROOPERS, _TANKS, _BOMBERS))
+    out = Forces(troopers, tanks, bombers)
+    if record.type == ATTACK_RESULT and len(d) >= ATTACK_SIZE + 28:
+        tail = d[ATTACK_SIZE:]
+        out.defenders_destroyed = struct.unpack_from("<i", tail, _DESTROYED)[0]
+        out.loss_fraction = real48(tail[_LOSS:_LOSS + 6])
+    return out
 
 
 def attacks(packet: bytes) -> List[Attack]:

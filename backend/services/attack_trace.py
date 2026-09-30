@@ -198,6 +198,35 @@ def _candidates(packet: Packet, paths: Optional[List[Path]]) -> List[bytes]:
     return out
 
 
+# ── the admin reveal ──────────────────────────────────────────────────────
+def forces(db: Session, attack_id: str, data_dir: Optional[Path]
+           ) -> Optional[bre_packet.Forces]:
+    """Read an attack's strength, and its cost if the result has been seen,
+    back out of a packet the hub stored. Sightings hold no unit counts, so this
+    is the only way to them: see the admin reveal in api/management/attacks.py.
+
+    A result is preferred, as it echoes the attack and adds the outcome. Only a
+    copy whose checksum matches its row is read (filenames are reused).
+    """
+    rows = (db.query(Packet).join(AttackSighting, AttackSighting.packet_id == Packet.id)
+            .filter(AttackSighting.attack_id == attack_id.lower())
+            .order_by(AttackSighting.is_result.desc(), Packet.id).all())
+    index = _file_index(Path(data_dir)) if data_dir else {}
+    for packet in rows:
+        for content in _candidates(packet, index.get(packet.filename.upper())):
+            if packet.checksum and hashlib.sha256(content).hexdigest() != packet.checksum:
+                continue
+            try:
+                records = bre_packet.parse(content)
+            except bre_packet.PacketFormatError:
+                continue
+            for r in records:
+                if r.type in (bre_packet.INDIV_ATTACK, bre_packet.ATTACK_RESULT) \
+                        and bre_packet.attack(r).attack_id == attack_id.lower():
+                    return bre_packet.forces(r)
+    return None
+
+
 # ── the journey ───────────────────────────────────────────────────────────
 @dataclass
 class Hop:

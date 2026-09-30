@@ -46,7 +46,12 @@ SESSION = [
     # result below arrived after the attacks were written off.
     ("rollover_901b0201.006", "901B0201.006", at(10, 2, 3, 3), at(10, 2, 3, 4)),
     ("results_late_901b0102.004", "901B0102.004", at(9, 29, 3, 4), at(10, 2, 3, 5)),
+    # A later round with tanks and bombers, for the admin's forces reveal. Node 2
+    # was REDATEd to 7 Oct for it; its stamps are moved to the hub's day below.
+    ("forces_901b0201.013", "901B0201.013", at(9, 30, 11, 10), at(9, 30, 11, 12)),
+    ("forces_results_901b0102.010", "901B0102.010", at(9, 30, 11, 14), at(9, 30, 11, 19)),
 ]
+FORCES_REDATE = timedelta(days=7)      # 7 Oct on node 2's clock was 30 Sep
 
 
 def main():
@@ -90,6 +95,8 @@ def main():
     for s in db.query(AttackSighting).filter_by(league_id=league.id):
         if s.stamp and s.stamp.year == 2026 and s.stamp.month == 9 and s.stamp.day == 29:
             s.stamp -= SHIFT
+        elif s.stamp and s.stamp.year == 2026 and s.stamp.month == 10 and s.stamp.day == 7:
+            s.stamp -= FORCES_REDATE + SHIFT
     settings = db.get(LeagueGameSettings, league.id)
     if settings and settings.game_started_at and settings.game_started_at.day == 29:
         settings.game_started_at -= SHIFT
