@@ -17,7 +17,7 @@ from backend.core.security import get_current_user, require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, SysopUser
 from backend.schemas.attacks import AttackForces, AttackHop, AttackJourney
-from backend.services import attack_trace
+from backend.services import attack_trace, bre_packet
 
 router = APIRouter()
 logger = get_logger(context="management_attacks")
@@ -108,23 +108,26 @@ async def reveal_forces(
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Troopers, tanks and bombers sent, and once resolved, the losses both sides took.
+    """Forces sent, and once resolved, whether it won, the losses, and regions taken.
 
     Hidden game state, so admin only, one attack per request, and never part of
     the listing: the UI fetches it only when the admin clicks to reveal. Each
-    reveal is logged. Jets are not mapped yet.
+    reveal is logged.
     """
     data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
     f = attack_trace.forces(db, attack_id, data_dir)
     if f is None:
         raise HTTPException(status_code=404, detail="No stored packet holds this attack")
     logger.info(f"Attack {attack_id.lower()} forces revealed to {current_user.username}")
-    sent = {"troopers": f.troopers, "tanks": f.tanks, "bombers": f.bombers}
+    sent = {u: getattr(f, u) for u in bre_packet.UNITS}
     lost = f.lost()
     return AttackForces(
         attack_id=attack_id.lower(),
         sent=sent,
+        carriers=f.carriers,
         resolved=lost is not None,
+        success=f.success,
+        regions_captured=f.regions_captured,
         loss_percent=None if f.loss_fraction is None else round(f.loss_fraction * 100, 1),
         lost=lost,
         returned=None if lost is None else {u: sent[u] - lost[u] for u in sent},

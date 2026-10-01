@@ -91,7 +91,7 @@ function toggle(id: string) {
 }
 
 // Admin reveal: fetched only on click, forgotten when hidden.
-const UNITS = ['troopers', 'tanks', 'bombers'] as const
+const UNITS = ['troopers', 'jets', 'tanks', 'bombers'] as const
 const forces = ref<Record<string, AttackForces>>({})
 const forcesLoading = ref<string | null>(null)
 const forcesError = ref<Record<string, string>>({})
@@ -384,11 +384,15 @@ watch([days, leagueId, planet, onlyMit], load)
                               </table>
                               <p class="text-muted small">
                                 <template v-if="forces[j.attack_id].resolved">
+                                  <strong>{{ forces[j.attack_id].success ? 'SUCCESS' : 'FAILURE' }}</strong><template v-if="forces[j.attack_id].regions_captured">,
+                                  captured {{ forces[j.attack_id].regions_captured }} region<span v-if="forces[j.attack_id].regions_captured !== 1">s</span></template>.
                                   Attacker lost {{ forces[j.attack_id].loss_percent }}% of each unit type;
                                   destroyed {{ forces[j.attack_id].defenders_destroyed }} defending trooper<span v-if="forces[j.attack_id].defenders_destroyed !== 1">s</span>.
                                 </template>
                                 <template v-else>No result seen yet, so no outcome.</template>
-                                Jets are not decoded yet.
+                                <template v-if="forces[j.attack_id].carriers">
+                                  {{ forces[j.attack_id].carriers }} carrier<span v-if="forces[j.attack_id].carriers !== 1">s</span> flew the jets; carriers always come home.
+                                </template>
                               </p>
                             </template>
                             <template v-else>

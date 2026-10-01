@@ -271,13 +271,18 @@ export interface AttackFilters {
 }
 
 // Admin only, fetched per attack on request: hidden game state.
+export type AttackUnit = 'troopers' | 'jets' | 'tanks' | 'bombers'
+
 export interface AttackForces {
   attack_id: string
-  sent: Record<'troopers' | 'tanks' | 'bombers', number>
+  sent: Record<AttackUnit, number>
+  carriers: number
   resolved: boolean
+  success: boolean | null
+  regions_captured: number | null
   loss_percent: number | null
-  lost: Record<'troopers' | 'tanks' | 'bombers', number> | null
-  returned: Record<'troopers' | 'tanks' | 'bombers', number> | null
+  lost: Record<AttackUnit, number> | null
+  returned: Record<AttackUnit, number> | null
   defenders_destroyed: number | null
 }
 

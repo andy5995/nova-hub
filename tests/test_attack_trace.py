@@ -413,11 +413,11 @@ def as_user(admin):
 def test_an_admin_can_reveal_what_an_attack_sent_and_cost(api, db, league):
     forces_round(db, league)
     got = api.get(BASE + "17c8cce828542b81/forces").json()
-    assert got["sent"] == {"troopers": 21, "tanks": 17, "bombers": 12}
-    assert got["resolved"] is True
-    assert got["lost"] == {"troopers": 3, "tanks": 3, "bombers": 2}
-    assert got["returned"] == {"troopers": 18, "tanks": 14, "bombers": 10}
-    assert got["defenders_destroyed"] == 8
+    assert got["sent"] == {"troopers": 21, "jets": 0, "tanks": 17, "bombers": 12}
+    assert got["resolved"] is True and got["success"] is False
+    assert got["lost"] == {"troopers": 3, "jets": 0, "tanks": 3, "bombers": 2}
+    assert got["returned"] == {"troopers": 18, "jets": 0, "tanks": 14, "bombers": 10}
+    assert got["defenders_destroyed"] == 8 and got["regions_captured"] == 0
 
 
 def test_an_attack_not_yet_resolved_reveals_only_what_it_sent(api, db, league):
@@ -441,3 +441,15 @@ def test_forces_for_an_attack_the_hub_never_carried(api, db, league):
 
 def test_forces_needs_a_whole_attack_id(api):
     assert api.get(BASE + "17c8cce8/forces").status_code == 422
+
+
+def test_a_won_attack_reveals_its_jets_carriers_and_regions(api, db, league):
+    for fixture, name, at in (("jets_901b0201.015", "901b0201.015", t("11:20", day=30)),
+                              ("jets_results_901b0102.012", "901b0102.012", t("11:21", day=30))):
+        store(db, league, fixture, name, at=at).file_data = raw(fixture)
+    db.commit()
+    got = api.get(BASE + "9964b49e59ee52ec/forces").json()
+    assert got["sent"] == {"troopers": 98, "jets": 7, "tanks": 9, "bombers": 7}
+    assert got["carriers"] == 1
+    assert got["success"] is True and got["regions_captured"] == 10
+    assert got["returned"] == {"troopers": 89, "jets": 6, "tanks": 8, "bombers": 6}

@@ -50,8 +50,11 @@ SESSION = [
     # was REDATEd to 7 Oct for it; its stamps are moved to the hub's day below.
     ("forces_901b0201.013", "901B0201.013", at(9, 30, 11, 10), at(9, 30, 11, 12)),
     ("forces_results_901b0102.010", "901B0102.010", at(9, 30, 11, 14), at(9, 30, 11, 19)),
+    # The next day's round: jets on carriers, and a win that captured regions.
+    ("jets_901b0201.015", "901B0201.015", at(10, 1, 11, 18), at(10, 1, 11, 19)),
+    ("jets_results_901b0102.012", "901B0102.012", at(10, 1, 11, 20), at(10, 1, 11, 21)),
 ]
-FORCES_REDATE = timedelta(days=7)      # 7 Oct on node 2's clock was 30 Sep
+FORCES_REDATE = timedelta(days=7)      # node 2's 7 and 8 Oct were 30 Sep and 1 Oct
 
 
 def main():
@@ -95,7 +98,7 @@ def main():
     for s in db.query(AttackSighting).filter_by(league_id=league.id):
         if s.stamp and s.stamp.year == 2026 and s.stamp.month == 9 and s.stamp.day == 29:
             s.stamp -= SHIFT
-        elif s.stamp and s.stamp.year == 2026 and s.stamp.month == 10 and s.stamp.day == 7:
+        elif s.stamp and s.stamp.year == 2026 and s.stamp.month == 10 and s.stamp.day in (7, 8):
             s.stamp -= FORCES_REDATE + SHIFT
     settings = db.get(LeagueGameSettings, league.id)
     if settings and settings.game_started_at and settings.game_started_at.day == 29:

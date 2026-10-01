@@ -133,19 +133,45 @@ def _forces(name):
 
 def test_forces_sent_are_troopers_tanks_and_bombers():
     got = _forces("forces_901b0201.013")
-    assert [(f.troopers, f.tanks, f.bombers) for f in got.values()] == \
-        [(21, 17, 12), (33, 0, 0), (9, 0, 0)]
+    assert [(f.troopers, f.jets, f.tanks, f.bombers, f.carriers) for f in got.values()] == \
+        [(21, 0, 17, 12, 0), (33, 0, 0, 0, 0), (9, 0, 0, 0, 0)]
     assert all(f.loss_fraction is None and f.lost() is None for f in got.values())
 
 
 def test_a_result_gives_the_losses_the_attackers_report_printed():
     got = _forces("forces_results_901b0102.010")
     # "You lost 3 Troopers, 3 Tanks, and 2 Bombers!"  "You destroyed 8 Troopers!"
-    assert got["17c8cce828542b81"].lost() == {"troopers": 3, "tanks": 3, "bombers": 2}
+    assert got["17c8cce828542b81"].lost() == {"troopers": 3, "jets": 0, "tanks": 3, "bombers": 2}
     assert got["17c8cce828542b81"].defenders_destroyed == 8
+    assert all(f.success is False and f.regions_captured == 0 for f in got.values())
     # "You lost 7 Troopers!"  "You destroyed nothing!"
     assert got["721117a886d8fa0f"].lost()["troopers"] == 7
     assert got["721117a886d8fa0f"].defenders_destroyed == 0
     # Quick Strike: "You lost 2 Troopers!"
     assert got["4a85ed3242ec561c"].lost()["troopers"] == 2
 
+
+
+def test_jets_fly_on_carriers_and_a_win_captures_regions():
+    # Day two: 10 troopers + 23 jets + 5 tanks + 3 bombers on one carrier, and
+    # 98 + 7 + 9 + 7 on another. Node 2's report of each result is quoted.
+    sent = _forces("jets_901b0201.015")
+    assert [(f.troopers, f.jets, f.tanks, f.bombers, f.carriers) for f in sent.values()] == \
+        [(10, 23, 5, 3, 1), (98, 7, 9, 7, 1)]
+    got = _forces("jets_results_901b0102.012")
+    # "Result: FAILURE ... You lost 2 Troopers, 4 Jets, 1 Tank, and 1 Bomber!"
+    lost = got["2f1b557968aaf55e"]
+    assert lost.success is False and lost.regions_captured == 0
+    assert lost.lost() == {"troopers": 2, "jets": 4, "tanks": 1, "bombers": 1}
+    # "Result: SUCCESS  Your forces blew the enemy away and captured 10 regions!
+    #  You lost 9 Troopers, 1 Jet, 1 Tank, and 1 Bomber!  You destroyed 13 Troopers!"
+    won = got["9964b49e59ee52ec"]
+    assert won.success is True and won.regions_captured == 10
+    assert won.lost() == {"troopers": 9, "jets": 1, "tanks": 1, "bombers": 1}
+    assert won.defenders_destroyed == 13
+
+
+def test_the_trade_deal_and_its_report_have_their_games_names():
+    names = {r.name for name in ("trade_901b0201.017", "trade_report_901b0102.014")
+             for r in bp.parse(load(name))}
+    assert {"Trade Deal", "Report"} <= names

@@ -88,8 +88,9 @@ RECORD_TYPES = {
     0x12: "Routing List",           # 257
     0x13: "Spy Report",             # 74
     0x14: "News Data",              # 258
+    0x15: "Report",                 # 738, game-written text, e.g. "Trade Deal arrived at ..."
     0x17: "Spy Guy",                # 3
-    # 0x18: 52 bytes, seen once (013B). Unnamed.
+    0x18: "Trade Deal",             # 52; named by the rig's /DETAILED transcript
     0x1A: "Time Check",             # 8
 }
 
@@ -104,8 +105,10 @@ _FROM_PLANET = 1
 _TO_PLANET = 2
 _TARGET = 7            # realm letter on the target planet
 _TROOPERS = 12         # i32
-_TANKS = 20            # i32; 16 is presumably jets, never sent on the rig (they need carriers)
+_JETS = 16             # i32; jets need carriers to fly, one carrier per 100
+_TANKS = 20            # i32
 _BOMBERS = 24          # i32
+_CARRIERS = 28         # i32; they ride along and always come home, so never "lost"
 _STAMP = 859           # 6-byte Real; attack: sender's session start, result: resolved
 _NORMAL = 866          # 1 = Normal attack, 0 = Quick Strike (Extended not yet seen)
 _ID = 867              # 8 bytes, unique per attack, echoed in the result
@@ -222,32 +225,39 @@ def troopers(record: Record) -> int:
     return struct.unpack_from("<i", record.data, _TROOPERS)[0]
 
 
+UNITS = ("troopers", "jets", "tanks", "bombers")
+
+
 @dataclass
 class Forces:
     """What an attack sent, and -- read from its result -- what it cost."""
     troopers: int
+    jets: int
     tanks: int
     bombers: int
+    carriers: int
+    success: Optional[bool] = None
     loss_fraction: Optional[float] = None
     defenders_destroyed: Optional[int] = None
+    regions_captured: Optional[int] = None
 
     def lost(self) -> Optional[dict]:
         """The game loses the same fraction of every unit type, rounded half up.
 
-        Checked against the attacker's report for 21 troopers + 17 tanks + 12
-        bombers (lost 3, 3, 2), 33 troopers (7), 9 troopers (2) and 7 (2).
+        Checked against the attacker's report for six attacks, e.g. 10 troopers
+        + 23 jets + 5 tanks + 3 bombers lost 2, 4, 1, 1. Carriers are not in
+        the report and came home in full.
         """
         if self.loss_fraction is None:
             return None
-        return {unit: int(n * self.loss_fraction + 0.5) for unit, n in
-                (("troopers", self.troopers), ("tanks", self.tanks),
-                 ("bombers", self.bombers))}
+        return {u: int(getattr(self, u) * self.loss_fraction + 0.5) for u in UNITS}
 
 
 # Offsets into the 28 bytes a result appends to the echoed attack.
+_FAILED = 0            # 1 = FAILURE, 0 = SUCCESS
 _DESTROYED = 1         # i32, defending troopers killed ("You destroyed 8 Troopers!")
+_CAPTURED = 17         # i32, regions captured ("captured 10 regions!")
 _LOSS = 21             # 6-byte Real, fraction of each unit type the attacker lost
-# Byte 0 was 1 in every result seen, all of them FAILUREs; success is not mapped.
 
 
 def forces(record: Record) -> Forces:
@@ -255,12 +265,13 @@ def forces(record: Record) -> Forces:
     d = record.data
     if record.type not in (INDIV_ATTACK, ATTACK_RESULT) or len(d) < ATTACK_SIZE:
         raise PacketFormatError(f"{record.name} is not an individual attack")
-    troopers, tanks, bombers = (struct.unpack_from("<i", d, o)[0]
-                                for o in (_TROOPERS, _TANKS, _BOMBERS))
-    out = Forces(troopers, tanks, bombers)
+    out = Forces(*(struct.unpack_from("<i", d, o)[0]
+                   for o in (_TROOPERS, _JETS, _TANKS, _BOMBERS, _CARRIERS)))
     if record.type == ATTACK_RESULT and len(d) >= ATTACK_SIZE + 28:
         tail = d[ATTACK_SIZE:]
+        out.success = tail[_FAILED] == 0
         out.defenders_destroyed = struct.unpack_from("<i", tail, _DESTROYED)[0]
+        out.regions_captured = struct.unpack_from("<i", tail, _CAPTURED)[0]
         out.loss_fraction = real48(tail[_LOSS:_LOSS + 6])
     return out
 
