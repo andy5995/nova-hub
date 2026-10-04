@@ -293,6 +293,49 @@ export const attacksApi = {
     api.get<AttackForces>(`/attacks/${attackId}/forces`),
 }
 
+// InterBBS traffic other than attacks
+export interface TrafficEvent {
+  key: string
+  league_id: number
+  league_name: string | null
+  kind: string
+  record_type: number
+  from_planet: number
+  to_planet: number
+  from_letter: string | null
+  to_letter: string | null
+  recipients: string | null
+  stamp: string | null
+  at_hub: string | null
+  delivered: string | null
+  stage: 'delivered' | 'awaiting pickup' | 'not seen'
+  paired_with: string | null
+  revealable: boolean
+  hops: AttackHop[]
+}
+
+// Admin only, fetched per event on request: hidden game state.
+export interface TrafficDetails {
+  key: string
+  kind: string
+  details: Record<string, any>
+}
+
+export interface TrafficFilters {
+  days?: number
+  league_id?: number
+  planet?: number
+  record_type?: number
+  limit?: number
+}
+
+export const trafficApi = {
+  list: (params: TrafficFilters = {}) =>
+    api.get<TrafficEvent[]>('/traffic/', { params }),
+  details: (key: string) =>
+    api.get<TrafficDetails>(`/traffic/${key}/details`),
+}
+
 // Alerts API functions
 export const alertsApi = {
   list: () =>

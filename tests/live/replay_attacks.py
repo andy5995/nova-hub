@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO))
 from backend.core.config import init_config                          # noqa: E402
 from backend.core.database import get_session, init_database         # noqa: E402
 from backend.models.database import (                                 # noqa: E402
-    AttackSighting, Base, League, LeagueGameSettings, Packet,
+    AttackSighting, Base, League, LeagueGameSettings, Packet, TrafficSighting,
 )
 from backend.services import attack_trace                             # noqa: E402
 
@@ -53,8 +53,15 @@ SESSION = [
     # The next day's round: jets on carriers, and a win that captured regions.
     ("jets_901b0201.015", "901B0201.015", at(10, 1, 11, 18), at(10, 1, 11, 19)),
     ("jets_results_901b0102.012", "901B0102.012", at(10, 1, 11, 20), at(10, 1, 11, 21)),
+    # Then a trade deal and Terrorist Ops, the last batch partly caught.
+    ("trade_901b0201.017", "901B0201.017", at(10, 1, 11, 40), at(10, 1, 11, 41)),
+    ("trade_report_901b0102.014", "901B0102.014", at(10, 1, 11, 42), at(10, 1, 11, 43)),
+    ("tops_901b0201.019", "901B0201.019", at(10, 1, 11, 50), at(10, 1, 11, 51)),
+    ("tops_partial_901b0102.016", "901B0102.016", at(10, 1, 11, 52), at(10, 1, 11, 53)),
 ]
-FORCES_REDATE = timedelta(days=7)      # node 2's 7 and 8 Oct were 30 Sep and 1 Oct
+# Node 2 was REDATEd a day further for each of those rounds; its game's dates
+# map back to the hub's day like this (days to subtract, by October date).
+REDATED = {7: 7, 8: 7, 9: 8, 10: 9}
 
 
 def main():
@@ -93,13 +100,16 @@ def main():
             p.downloaded_at, p.is_downloaded = taken, True
         db.commit()
         attack_trace.record(db, p, content)
-        print(f"  {filename}: {db.query(AttackSighting).filter_by(packet_id=p.id).count()} sighting(s)")
+        print(f"  {filename}: {db.query(AttackSighting).filter_by(packet_id=p.id).count()} attack(s), "
+              f"{db.query(TrafficSighting).filter_by(packet_id=p.id).count()} other")
 
-    for s in db.query(AttackSighting).filter_by(league_id=league.id):
+    sightings = (db.query(AttackSighting).filter_by(league_id=league.id).all()
+                 + db.query(TrafficSighting).filter_by(league_id=league.id).all())
+    for s in sightings:
         if s.stamp and s.stamp.year == 2026 and s.stamp.month == 9 and s.stamp.day == 29:
             s.stamp -= SHIFT
-        elif s.stamp and s.stamp.year == 2026 and s.stamp.month == 10 and s.stamp.day in (7, 8):
-            s.stamp -= FORCES_REDATE + SHIFT
+        elif s.stamp and s.stamp.year == 2026 and s.stamp.month == 10 and s.stamp.day in REDATED:
+            s.stamp -= timedelta(days=REDATED[s.stamp.day]) + SHIFT
     settings = db.get(LeagueGameSettings, league.id)
     if settings and settings.game_started_at and settings.game_started_at.day == 29:
         settings.game_started_at -= SHIFT

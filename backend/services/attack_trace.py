@@ -32,7 +32,9 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from backend.logging_config import get_logger
-from backend.models.database import AttackSighting, League, LeagueGameSettings, Packet
+from backend.models.database import (
+    AttackSighting, League, LeagueGameSettings, Packet, TrafficSighting,
+)
 from backend.services import bre_packet
 
 logger = get_logger(context="attack_trace")
@@ -47,7 +49,8 @@ def _now() -> datetime:
 
 # ── recording ─────────────────────────────────────────────────────────────
 def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> int:
-    """Record the attacks and league settings in one packet. Returns sightings added.
+    """Record the attacks, other traffic and league settings in one packet.
+    Returns sightings added, of both kinds.
 
     Idempotent per packet: a filename is reused when its sequence number wraps,
     and the outbound collector then rewrites the same row, so whatever was
@@ -61,6 +64,7 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
 
     records = bre_packet.parse(content)
     db.query(AttackSighting).filter(AttackSighting.packet_id == packet.id).delete()
+    db.query(TrafficSighting).filter(TrafficSighting.packet_id == packet.id).delete()
 
     added = 0
     for rec in records:
@@ -80,6 +84,19 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
             added += 1
         elif rec.type == bre_packet.CONFIG_UPDATE:
             _remember_settings(db, league, packet, bre_packet.league_settings(rec))
+        elif rec.type in bre_packet.TRAFFIC_TYPES:
+            t = bre_packet.traffic(rec)
+            db.add(TrafficSighting(
+                event_key=bre_packet.event_key(rec), packet_id=packet.id,
+                league_id=league.id, record_type=t.type,
+                from_planet=t.from_planet, to_planet=t.to_planet,
+                from_letter=t.from_letter, to_letter=t.to_letter,
+                from_player=t.from_player, to_player=t.to_player,
+                recipients=None if t.recipients is None
+                else ",".join(str(r) for r in t.recipients),
+                pair_key=t.pair_key, stamp=t.stamp,
+            ))
+            added += 1
     if commit:
         db.commit()
     else:
@@ -126,9 +143,11 @@ def backfill(db: Session, data_dir: Path, redo: bool = False) -> Dict[str, int]:
     """
     counts = {"packets": 0, "traced": 0, "sightings": 0, "missing": 0,
               "mismatched": 0, "failed": 0}
+    # A packet already traced has sightings of one kind or the other. One
+    # traced before traffic was recorded has only attacks: --redo catches those.
     done = set() if redo else {
         pid for (pid,) in db.query(AttackSighting.packet_id).distinct()
-    }
+    } | {pid for (pid,) in db.query(TrafficSighting.packet_id).distinct()}
     packets = (
         db.query(Packet).join(League, Packet.league_id == League.id)
         .filter(League.game_type == "B")
@@ -211,20 +230,26 @@ def forces(db: Session, attack_id: str, data_dir: Optional[Path]
     rows = (db.query(Packet).join(AttackSighting, AttackSighting.packet_id == Packet.id)
             .filter(AttackSighting.attack_id == attack_id.lower())
             .order_by(AttackSighting.is_result.desc(), Packet.id).all())
+    for r in stored_records(rows, data_dir):
+        if r.type in (bre_packet.INDIV_ATTACK, bre_packet.ATTACK_RESULT) \
+                and bre_packet.attack(r).attack_id == attack_id.lower():
+            return bre_packet.forces(r)
+    return None
+
+
+def stored_records(packets: List[Packet], data_dir: Optional[Path]):
+    """Every record of these packets, read back from whichever stored copy
+    matches the row's checksum (filenames are reused), in the order given."""
     index = _file_index(Path(data_dir)) if data_dir else {}
-    for packet in rows:
+    for packet in packets:
         for content in _candidates(packet, index.get(packet.filename.upper())):
             if packet.checksum and hashlib.sha256(content).hexdigest() != packet.checksum:
                 continue
             try:
-                records = bre_packet.parse(content)
+                yield from bre_packet.parse(content)
             except bre_packet.PacketFormatError:
                 continue
-            for r in records:
-                if r.type in (bre_packet.INDIV_ATTACK, bre_packet.ATTACK_RESULT) \
-                        and bre_packet.attack(r).attack_id == attack_id.lower():
-                    return bre_packet.forces(r)
-    return None
+            break
 
 
 # ── the journey ───────────────────────────────────────────────────────────

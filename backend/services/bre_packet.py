@@ -43,6 +43,8 @@ ID and the timestamps identify an attack; its strength is hidden game state.
 clicking to reveal it -- so an admin who plays never sees it by accident.
 """
 import datetime
+import hashlib
+import re
 import struct
 import zlib
 from dataclasses import dataclass
@@ -320,3 +322,121 @@ if __name__ == "__main__":
                 line += (f"  id={a.attack_id} {a.from_planet}{a.attacker}->"
                          f"{a.to_planet}{a.target} {a.attack_type} {a.stamp}")
             print(line)
+
+
+# ── the rest of the InterBBS traffic ──────────────────────────────────────
+# Everything a player does to another planet, other than an individual attack.
+# Mapped on the rig, each against what the game told the player. As with
+# attacks, `traffic()` reads only what says who did what to whom; what was in it
+# is `traffic_details()`, for the admin reveal. A Message's text is never read:
+# its header ends at MESSAGE_TEXT and nothing here looks past the recipients.
+TERRORIST_OP, TERRORIST_RESULT = 0x03, 0x04
+MESSAGE = 0x09
+SPY_REPORT, REPORT, SPY_GUY, TRADE_DEAL = 0x13, 0x15, 0x17, 0x18
+TRAFFIC_TYPES = frozenset({
+    TERRORIST_OP, TERRORIST_RESULT, 0x05, 0x06, MESSAGE, 0x0B, 0x0C, 0x0E, 0x0F,
+    SPY_REPORT, REPORT, SPY_GUY, TRADE_DEAL,
+})
+
+# Terrorist Ops, by their number on the game's menu, which is what the op carries.
+OPERATIONS = {
+    1: "Send Spy", 2: "Bomb Intelligence", 3: "Demoralize", 4: "Cause Dissensions",
+    5: "Bomb AirBases", 6: "Stir Emigrations", 7: "Spread Propaganda",
+    8: "Bomb Food Stores", 9: "Sabotage HQ",
+}
+# A Trade Deal's goods: nine i32s from offset 16, in the order of its menu.
+TRADE_GOODS = ("troopers", "jets", "turrets", "bombers", "food", "gold",
+               "agents", "tanks", "carriers")
+MESSAGE_RECIPIENTS = 7      # i32 player IDs, zero-terminated, up to 25 of them
+MESSAGE_TEXT = 114          # where the player's text begins -- never read
+ALL_PLANETS = -999          # the recipient ID of a message to every planet
+
+
+@dataclass
+class Traffic:
+    """Who sent what to whom. Letters and player IDs are on the record's
+    from/to sides (the board that wrote it, and the board it is for); None
+    where the record does not say."""
+    type: int
+    name: str
+    from_planet: int
+    to_planet: int
+    from_letter: Optional[str] = None
+    to_letter: Optional[str] = None
+    from_player: Optional[int] = None
+    to_player: Optional[int] = None
+    recipients: Optional[List[int]] = None     # Message only
+    pair_key: Optional[str] = None             # joins a Terrorist Op to its result
+    stamp: Optional[datetime.datetime] = None  # when the far side resolved it
+
+
+def event_key(record: Record) -> str:
+    """The same record relayed by the hub is the same bytes; that is its identity.
+    (Two ops identical to the byte -- same realms, count, type, agents owned --
+    would be one event. Ops carry no ID of their own.)"""
+    return hashlib.sha1(bytes([record.type]) + record.data).hexdigest()[:16]
+
+
+def _i32(d: bytes, o: int) -> int:
+    return struct.unpack_from("<i", d, o)[0]
+
+
+def traffic(record: Record) -> Optional[Traffic]:
+    if record.type not in TRAFFIC_TYPES:
+        return None
+    d, t = record.data, record.type
+    out = Traffic(t, record.name, record.src, record.dst)
+    if t in (TERRORIST_OP, TRADE_DEAL) and len(d) >= 10:
+        out.from_letter, out.to_letter = chr(d[0]), chr(d[1])
+        out.from_player, out.to_player = _i32(d, 2), _i32(d, 6)
+        if t == TERRORIST_OP:
+            out.pair_key = d[0:10].hex()
+    elif t == TERRORIST_RESULT and len(d) >= 16:
+        # The result travels back: from the target's board to the operative's.
+        out.stamp = timestamp(d[0:6])
+        out.from_letter, out.to_letter = chr(d[7]), chr(d[6])
+        out.from_player, out.to_player = _i32(d, 12), _i32(d, 8)
+        out.pair_key = d[6:16].hex()
+    elif t == MESSAGE and len(d) >= MESSAGE_RECIPIENTS:
+        out.from_letter, out.from_player = chr(d[2]), _i32(d, 3)
+        ids = []
+        for o in range(MESSAGE_RECIPIENTS, MESSAGE_RECIPIENTS + 25 * 4, 4):
+            v = _i32(d, o)
+            if v == 0:
+                break
+            ids.append(v)
+            if v == ALL_PLANETS:
+                break
+        out.recipients = ids
+    elif t == SPY_REPORT and len(d) >= 74:
+        out.stamp = timestamp(d[68:74])
+    elif t == REPORT and len(d) >= 6:
+        out.to_player = _i32(d, 2)
+    return out
+
+
+def _pascal(d: bytes, o: int) -> str:
+    text = d[o + 1:o + 1 + d[o]].decode("cp437", "replace")
+    return re.sub(r"\^\\[0-9A-Fa-f]{2}", "", text)     # the game's colour codes
+
+
+def traffic_details(record: Record) -> Optional[dict]:
+    """Hidden game state, for the admin reveal only. None for a Message: its
+    content is never decoded, and for types not yet mapped."""
+    d, t = record.data, record.type
+    if t == TERRORIST_OP:
+        return {"operation": OPERATIONS.get(d[17], f"op {d[17]}"), "sent": d[11],
+                "agents_owned": _i32(d, 13)}
+    if t == TERRORIST_RESULT:
+        return {"operation": OPERATIONS.get(d[20], f"op {d[20]}"), "sent": d[17],
+                "succeeded": d[19]}
+    if t == TRADE_DEAL:
+        goods = struct.unpack_from("<9i", d, 16)
+        return {"goods": {g: n for g, n in zip(TRADE_GOODS, goods) if n}}
+    if t == SPY_REPORT:
+        return {"realm": _pascal(d, 12), "troopers": _i32(d, 47)}
+    if t == REPORT:
+        return {"text": _pascal(d, 6)}
+    if t == SPY_GUY:
+        return {"days": d[2]}
+    return None

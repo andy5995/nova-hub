@@ -307,6 +307,40 @@ class AttackSighting(Base):
     packet = relationship("Packet")
 
 
+class TrafficSighting(Base):
+    """One piece of InterBBS traffic other than an attack, inside one packet.
+
+    Terrorist Ops and their results, trade deals, spy reports, messages, Gooie
+    and Special Op traffic. As with attacks, only who sent what to whom: the
+    contents are hidden game state, read back from the packet only for an
+    admin who asks (and a Message's text, never). The same record relayed by
+    the hub is the same bytes, so `event_key` -- a hash of them -- groups the
+    sightings of one event. See bre_packet.traffic().
+    """
+
+    __tablename__ = "traffic_sightings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_key = Column(String(16), nullable=False, index=True)
+    packet_id = Column(Integer, ForeignKey("packets.id"), nullable=False, index=True)
+    league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False, index=True)
+    record_type = Column(Integer, nullable=False)
+    # The board that wrote the record and the board it is for.
+    from_planet = Column(Integer, nullable=False)
+    to_planet = Column(Integer, nullable=False)
+    from_letter = Column(String(1), nullable=True)
+    to_letter = Column(String(1), nullable=True)
+    from_player = Column(Integer, nullable=True)
+    to_player = Column(Integer, nullable=True)
+    # Message only: comma-separated player IDs, or -999 for every planet.
+    recipients = Column(String(300), nullable=True)
+    # A Terrorist Op and its result share this (their first ten bytes).
+    pair_key = Column(String(20), nullable=True, index=True)
+    stamp = Column(DateTime, nullable=True)
+
+    packet = relationship("Packet")
+
+
 class LeagueGameSettings(Base):
     """The League Coordinator's settings, as last broadcast in a Configupdate.
 
