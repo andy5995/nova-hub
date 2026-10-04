@@ -14,6 +14,19 @@ All notable changes to Nova Hub will be documented in this file.
 - Deleting a BBS that was still in a league failed with a server error. The
   hub now refuses, naming the leagues, and the Delete dialog says so before
   you press it: remove the BBS from its leagues first.
+- **"Routes/BBS info command failed: Unknown error" after every run (#83).**
+  BRE and FE end `ROUTEINFO` and `BBSINFO` with DOS errorlevel 1 even when they
+  succeed. Since 0.3.0 passed the real exit code through (`script -e`), each
+  working run logged two false warnings (1,204 pairs on production since
+  2026-09-10), while `routes.lst` and `bbsinfo.lst` were written and ingested
+  every time. These two commands are now judged by whether their listing file
+  was written during the run, and a warning names the stale file when it was not.
+- **No more "Unknown error".** A non-zero dosemu exit now reports its exit code
+  and transcript path, for every command including `PLANETARY`.
+- **Hub logs are plain text in the journal (#84).** loguru was forced to colour
+  its output, and journald stores a line containing ANSI escapes as an array of
+  byte values, so hub lines reached OpenObserve as `["27","91",...]` and could
+  not be searched. Colour is now used only when stdout is a terminal.
 
 ### Upgrading
 - `backfill_attacks.py` fills the Attacks and Traffic views from the packets
