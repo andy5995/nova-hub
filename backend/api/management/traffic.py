@@ -16,7 +16,7 @@ from backend.core.security import get_current_user, require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, Packet, SysopUser, TrafficSighting
 from backend.schemas.attacks import AttackHop
-from backend.schemas.traffic import TrafficDetails, TrafficEvent
+from backend.schemas.traffic import TrafficDetails, TrafficEvent, TrafficJourney
 from backend.services import attack_trace, bre_packet, traffic_trace
 
 router = APIRouter()
@@ -26,7 +26,7 @@ logger = get_logger(context="management_traffic")
 # contents are not mapped yet.
 REVEALABLE = frozenset({
     bre_packet.TERRORIST_OP, bre_packet.TERRORIST_RESULT, bre_packet.TRADE_DEAL,
-    bre_packet.SPY_REPORT, bre_packet.REPORT, bre_packet.SPY_GUY,
+    bre_packet.SPY_REPORT, bre_packet.REPORT, bre_packet.SPY_GUY, bre_packet.NEWS,
 })
 
 
@@ -34,37 +34,62 @@ def _iso(t: Optional[datetime]) -> Optional[str]:
     return t.isoformat() if t else None
 
 
-@router.get("/", response_model=List[TrafficEvent], summary="List InterBBS Traffic")
+# Results can come days after their send: look this much further back for sends,
+# so a result inside the window is not shown without the op it answers.
+LOOKBACK = timedelta(days=14)
+
+
+@router.get("/", response_model=List[TrafficJourney], summary="List InterBBS Traffic")
 async def list_traffic(
     days: int = Query(14, ge=1, le=365),
     league_id: Optional[int] = Query(None),
     planet: Optional[int] = Query(None, description="Either end"),
-    record_type: Optional[int] = Query(None, ge=0, le=255),
     limit: int = Query(500, ge=1, le=2000),
     current_user: SysopUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Traffic reaching the hub within `days`, newest first, each with its hops."""
+    """Journeys with anything reaching the hub within `days`, newest first.
+
+    A journey is a send and its result (an op, a trade deal), a Gooie from its
+    funding News to its kill, or a single event (a message, a Spy Guy).
+    """
     hub_index = get_config().get("hub", {}).get("bbs_index", "01")
-    found = traffic_trace.events(db, hub_index, league_id=league_id,
-                                 since=datetime.utcnow() - timedelta(days=days),
-                                 planet=planet, record_type=record_type, limit=limit)
+    since = datetime.utcnow() - timedelta(days=days)
+    found = traffic_trace.journeys(traffic_trace.events(
+        db, hub_index, league_id=league_id, since=since - LOOKBACK, planet=planet))
+    found = [j for j in found
+             if max((e.at_hub for e in j.events if e.at_hub), default=since) >= since]
     names = {lg.id: lg.name for lg in db.query(League).all()}
-    return [
-        TrafficEvent(
-            key=e.key, league_id=e.league_id, league_name=names.get(e.league_id),
-            kind=e.name, record_type=e.record_type,
+
+    def event(e):
+        return TrafficEvent(
+            key=e.key, kind=e.kind, role=e.role,
             from_planet=e.from_planet, to_planet=e.to_planet,
-            from_letter=e.from_letter, to_letter=e.to_letter,
-            recipients=e.recipients, stamp=_iso(e.stamp),
+            from_letter=e.from_letter, to_letter=e.to_letter, stamp=_iso(e.stamp),
             at_hub=_iso(e.at_hub), delivered=_iso(e.delivered), stage=e.stage,
-            paired_with=e.paired_with, revealable=e.record_type in REVEALABLE,
-            hops=[AttackHop(is_result=False, packet_id=h.packet_id, filename=h.filename,
-                            source_bbs=h.source_bbs, dest_bbs=h.dest_bbs,
-                            at_hub=_iso(h.at_hub), taken=_iso(h.taken)) for h in e.hops],
+            revealable=e.record_type in REVEALABLE,
+            hops=[AttackHop(is_result=e.role == bre_packet.RESULT, packet_id=h.packet_id,
+                            filename=h.filename, source_bbs=h.source_bbs,
+                            dest_bbs=h.dest_bbs, at_hub=_iso(h.at_hub),
+                            taken=_iso(h.taken)) for h in e.hops],
         )
-        for e in found
-    ]
+
+    out = []
+    for j in found[:limit]:
+        r, send, results = j.route, j.send or j.first, j.results
+        out.append(TrafficJourney(
+            key=j.first.key, league_id=j.first.league_id,
+            league_name=names.get(j.first.league_id), kind=j.kind,
+            from_planet=r.from_planet, to_planet=r.to_planet,
+            from_letter=r.from_letter, to_letter=r.to_letter,
+            recipients=j.first.recipients, expects_result=j.expects_result,
+            sent_at_hub=_iso(send.at_hub) if j.send or not results else None,
+            sent_delivered=_iso(send.delivered) if j.send or not results else None,
+            result_kind=results[0].kind if results else None,
+            result_at_hub=_iso(j.result_at_hub), result_delivered=_iso(j.result_delivered),
+            stage=j.stage, events=[event(e) for e in j.events],
+        ))
+    return out
 
 
 @router.get("/{key}/details", response_model=TrafficDetails,

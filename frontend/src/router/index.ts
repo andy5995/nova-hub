@@ -70,9 +70,7 @@ const router = createRouter({
     },
     {
       path: '/traffic',
-      name: 'traffic',
-      component: () => import('@/views/TrafficView.vue'),
-      meta: { requiresAuth: true }
+      redirect: '/attacks'
     },
     {
       path: '/alerts',

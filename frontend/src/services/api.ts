@@ -296,22 +296,39 @@ export const attacksApi = {
 // InterBBS traffic other than attacks
 export interface TrafficEvent {
   key: string
+  kind: string
+  role: 'send' | 'result' | 'notice' | null
+  from_planet: number
+  to_planet: number
+  from_letter: string | null
+  to_letter: string | null
+  stamp: string | null
+  at_hub: string | null
+  delivered: string | null
+  stage: string
+  revealable: boolean
+  hops: AttackHop[]
+}
+
+// A send and its result, a Gooie from funding to its end, or one event.
+export interface TrafficJourney {
+  key: string
   league_id: number
   league_name: string | null
   kind: string
-  record_type: number
   from_planet: number
   to_planet: number
   from_letter: string | null
   to_letter: string | null
   recipients: string | null
-  stamp: string | null
-  at_hub: string | null
-  delivered: string | null
-  stage: 'delivered' | 'awaiting pickup' | 'not seen'
-  paired_with: string | null
-  revealable: boolean
-  hops: AttackHop[]
+  expects_result: boolean
+  sent_at_hub: string | null
+  sent_delivered: string | null
+  result_kind: string | null
+  result_at_hub: string | null
+  result_delivered: string | null
+  stage: string
+  events: TrafficEvent[]
 }
 
 // Admin only, fetched per event on request: hidden game state.
@@ -325,13 +342,12 @@ export interface TrafficFilters {
   days?: number
   league_id?: number
   planet?: number
-  record_type?: number
   limit?: number
 }
 
 export const trafficApi = {
   list: (params: TrafficFilters = {}) =>
-    api.get<TrafficEvent[]>('/traffic/', { params }),
+    api.get<TrafficJourney[]>('/traffic/', { params }),
   details: (key: string) =>
     api.get<TrafficDetails>(`/traffic/${key}/details`),
 }

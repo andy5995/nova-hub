@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /**
- * Where each attack got to.
+ * Where each attack got to, and the rest of the InterBBS traffic with it:
+ * Terrorist, Bombing and Special Ops, trade deals, spy reports, messages and
+ * Gooies, each followed from its send to its result where it has one.
  *
  * A Missing In Transit is the attacker's game giving up on a result that never
  * came back. This page shows how far each attack actually travelled: to the
@@ -20,7 +22,10 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { attacksApi, leaguesApi, type AttackForces, type AttackJourney } from '@/services/api'
+import {
+  attacksApi, leaguesApi, trafficApi,
+  type AttackForces, type AttackJourney, type TrafficDetails, type TrafficJourney,
+} from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -28,6 +33,7 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const error = ref<string | null>(null)
 const journeys = ref<AttackJourney[]>([])
+const traffic = ref<TrafficJourney[]>([])
 const leagues = ref<Array<{ id: number; name: string }>>([])
 const expanded = ref<Set<string>>(new Set())
 
@@ -37,6 +43,7 @@ const planet = ref<number | undefined>(undefined)
 const onlyMit = ref(false)
 const idSearch = ref('')
 const launchedOn = ref('')   // YYYY-MM-DD, matched client-side
+const kind = ref('')         // '' everything, 'Attack', or a traffic kind
 
 const STEPS: Array<{ key: keyof AttackJourney; label: string }> = [
   { key: 'attack_at_hub', label: 'Attack reached the hub' },
@@ -50,14 +57,19 @@ async function load() {
   error.value = null
   try {
     const id = idSearch.value.trim()
-    const { data } = await attacksApi.list({
-      days: days.value,
-      league_id: leagueId.value,
-      planet: planet.value || undefined,
-      attack_id: /^[0-9a-fA-F]{1,16}$/.test(id) ? id : undefined,
-      mit: onlyMit.value ? 'any' : undefined,
-    })
-    journeys.value = data
+    const filters = { days: days.value, league_id: leagueId.value, planet: planet.value || undefined }
+    // An attack ID or the MIT filter is about attacks alone.
+    const attacksOnly = !!id || onlyMit.value
+    const [a, t] = await Promise.all([
+      attacksApi.list({
+        ...filters,
+        attack_id: /^[0-9a-fA-F]{1,16}$/.test(id) ? id : undefined,
+        mit: onlyMit.value ? 'any' : undefined,
+      }),
+      attacksOnly ? Promise.resolve({ data: [] as TrafficJourney[] }) : trafficApi.list(filters),
+    ])
+    journeys.value = a.data
+    traffic.value = t.data
   } catch (e: any) {
     error.value = e?.response?.data?.detail || 'Could not load attacks'
   } finally {
@@ -65,11 +77,34 @@ async function load() {
   }
 }
 
+interface Row {
+  id: string
+  at: string                  // hub clock, for ordering
+  attack?: AttackJourney
+  traffic?: TrafficJourney
+}
+
+const rows = computed<Row[]>(() => {
+  const out: Row[] = [
+    ...journeys.value.map((j) => ({ id: j.attack_id, at: j.attack_at_hub || j.launched || '', attack: j })),
+    ...traffic.value.map((t) => ({ id: t.key, at: t.events[0]?.at_hub || '', traffic: t })),
+  ]
+  return out.sort((x, y) => (x.at < y.at ? 1 : x.at > y.at ? -1 : 0))
+})
+
+const kinds = computed(() => [...new Set(traffic.value.map((t) => t.kind))].sort())
+
 /** A player's MIT report gives a date, not an ID; this is how to get from one to the other. */
 const shown = computed(() =>
-  launchedOn.value
-    ? journeys.value.filter((j) => j.launched?.startsWith(launchedOn.value))
-    : journeys.value
+  rows.value.filter((r) => {
+    if (kind.value === 'Attack' && !r.attack) return false
+    if (kind.value && kind.value !== 'Attack' && r.traffic?.kind !== kind.value) return false
+    if (launchedOn.value) {
+      const day = r.attack ? r.attack.launched : r.at
+      if (!day?.startsWith(launchedOn.value)) return false
+    }
+    return true
+  })
 )
 
 const counts = computed(() => {
@@ -117,6 +152,69 @@ function hide(id: string) {
   forces.value = next
 }
 
+// Traffic: the same reveal, per event, and the same journey dots.
+const details = ref<Record<string, TrafficDetails>>({})
+const detailsLoading = ref<string | null>(null)
+const detailsError = ref<Record<string, string>>({})
+
+async function revealEvent(key: string) {
+  detailsLoading.value = key
+  const errs = { ...detailsError.value }
+  delete errs[key]
+  try {
+    const { data } = await trafficApi.details(key)
+    details.value = { ...details.value, [key]: data }
+  } catch (e: any) {
+    errs[key] = e?.response?.data?.detail || 'Could not reveal this'
+  } finally {
+    detailsError.value = errs
+    detailsLoading.value = null
+  }
+}
+
+function hideEvent(key: string) {
+  const next = { ...details.value }
+  delete next[key]
+  details.value = next
+}
+
+type TrafficStep = { key: 'sent_at_hub' | 'sent_delivered' | 'result_at_hub' | 'result_delivered'; label: string }
+
+function trafficSteps(t: TrafficJourney): TrafficStep[] {
+  const steps: TrafficStep[] = [
+    { key: 'sent_at_hub', label: `${t.kind} reached the hub` },
+    { key: 'sent_delivered', label: `${t.kind} taken by the target board` },
+  ]
+  if (t.expects_result) {
+    steps.push({ key: 'result_at_hub', label: 'Result reached the hub' },
+               { key: 'result_delivered', label: 'Result taken by the sending board' })
+  }
+  return steps
+}
+
+function trafficStepTitle(t: TrafficJourney, step: TrafficStep): string {
+  const at = t[step.key]
+  return at ? `${step.label}: ${when(at)}` : `${step.label}: not yet`
+}
+
+function trafficRoute(t: { from_planet: number; to_planet: number; from_letter: string | null; to_letter: string | null; recipients?: string | null }): string {
+  const from = `${t.from_planet}${t.from_letter ?? ''}`
+  const r = t.recipients ?? null
+  if (r === 'all planets') return `${from} → all planets`
+  if (r !== null) {
+    return r.length > 1 ? `${from} → ${t.to_planet} (${r.split('').join(', ')})` : `${from} → ${t.to_planet}${r}`
+  }
+  return `${from} → ${t.to_planet}${t.to_letter ?? ''}`
+}
+
+function trafficStageClass(t: TrafficJourney): string {
+  return ['result delivered', 'delivered', 'destroyed'].includes(t.stage) ? 'badge-success' : 'badge-warning'
+}
+
+function label(k: string): string {
+  return k.replace(/_/g, ' ')
+}
+
 function when(stamp: string | null): string {
   if (!stamp) return '-'
   return stamp.replace('T', ' ').slice(0, 19)
@@ -155,6 +253,7 @@ function mitText(j: AttackJourney): string {
 }
 
 function clearFilters() {
+  kind.value = ''
   leagueId.value = undefined
   planet.value = undefined
   onlyMit.value = false
@@ -163,7 +262,7 @@ function clearFilters() {
 }
 
 const filtersActive = computed(
-  () => !!(leagueId.value || planet.value || onlyMit.value || idSearch.value || launchedOn.value)
+  () => !!(kind.value || leagueId.value || planet.value || onlyMit.value || idSearch.value || launchedOn.value)
 )
 
 onMounted(async () => {
@@ -189,9 +288,10 @@ watch([days, leagueId, planet, onlyMit], load)
     <div class="page">
       <header class="page-header">
         <div>
-          <h1>Attacks</h1>
+          <h1>Attacks &amp; Traffic</h1>
           <p class="text-muted">
-            BRE individual attacks, followed through the hub by the ID each result echoes
+            BRE attacks, ops, trade deals, spy reports, messages and Gooies, each followed
+            through the hub to its result &mdash; who to whom, not what
           </p>
         </div>
         <div class="window-picker">
@@ -223,6 +323,10 @@ watch([days, leagueId, planet, onlyMit], load)
             <span class="text-muted">attacks</span>
           </div>
           <div class="card tile">
+            <span class="tile-n">{{ traffic.length }}</span>
+            <span class="text-muted">other traffic</span>
+          </div>
+          <div class="card tile">
             <span class="tile-n">{{ counts.delivered }}</span>
             <span class="text-muted">result home</span>
           </div>
@@ -240,9 +344,14 @@ watch([days, leagueId, planet, onlyMit], load)
         <div class="card">
           <div class="card-header filter-bar">
             <h2>
-              {{ shown.length }} attack<span v-if="shown.length !== 1">s</span>
+              {{ shown.length }} journey<span v-if="shown.length !== 1">s</span>
             </h2>
             <div class="filters">
+              <select v-model="kind" class="form-select">
+                <option value="">Everything</option>
+                <option value="Attack">Attacks</option>
+                <option v-for="k in kinds" :key="k" :value="k">{{ k }}</option>
+              </select>
               <select v-model="leagueId" class="form-select">
                 <option :value="undefined">All leagues</option>
                 <option v-for="l in leagues" :key="l.id" :value="l.id">{{ l.name }}</option>
@@ -261,15 +370,15 @@ watch([days, leagueId, planet, onlyMit], load)
           <div class="card-body" style="padding: 0;">
             <div v-if="shown.length === 0" class="empty">
               <p class="text-muted">
-                No attacks match. Attacks are read from BRE packets as they reach the hub;
+                Nothing matches. Traffic is read from BRE packets as they reach the hub;
                 packets stored before this page existed appear once
-                <code>backfill_attacks.py</code> has been run.
+                <code>backfill_attacks.py --redo</code> has been run.
               </p>
             </div>
             <table v-else class="table">
               <thead>
                 <tr>
-                  <th>Launched</th>
+                  <th title="Attacks: launched, on the attacker's clock. Traffic: reached the hub.">When</th>
                   <th>League</th>
                   <th>From &rarr; to</th>
                   <th>Type</th>
@@ -279,7 +388,8 @@ watch([days, leagueId, planet, onlyMit], load)
                 </tr>
               </thead>
               <tbody>
-                <template v-for="j in shown" :key="j.attack_id">
+                <template v-for="row in shown" :key="row.id">
+                <template v-for="j in row.attack ? [row.attack] : []" :key="j.attack_id">
                   <tr class="clickable" :class="{ mit: j.mit }" @click="toggle(j.attack_id)">
                     <td class="font-mono" title="On the attacker board's clock -- the Date: on its MIT report">
                       {{ when(j.launched) }}
@@ -288,7 +398,7 @@ watch([days, leagueId, planet, onlyMit], load)
                     <td class="font-mono">
                       {{ j.from_planet }}{{ j.attacker }} &rarr; {{ j.to_planet }}{{ j.target }}
                     </td>
-                    <td>{{ j.attack_type || '-' }}</td>
+                    <td>Attack<span v-if="j.attack_type" class="text-muted"> &middot; {{ j.attack_type }}</span></td>
                     <td>
                       <span class="journey">
                         <template v-for="(s, i) in STEPS" :key="s.key">
@@ -408,6 +518,81 @@ watch([days, leagueId, planet, onlyMit], load)
                       </div>
                     </td>
                   </tr>
+                </template>
+                <template v-for="t in row.traffic ? [row.traffic] : []" :key="t.key">
+                  <tr class="clickable" @click="toggle(t.key)">
+                    <td class="font-mono" title="Reached the hub">{{ when(row.at) }}</td>
+                    <td>{{ t.league_name || '-' }}</td>
+                    <td class="font-mono">{{ trafficRoute(t) }}</td>
+                    <td>{{ t.kind }}</td>
+                    <td>
+                      <span class="journey">
+                        <template v-for="(s, i) in trafficSteps(t)" :key="s.key">
+                          <span v-if="i === 2" class="turn" title="The target's game answers it here"></span>
+                          <span class="dot" :class="{ on: !!t[s.key] }" :title="trafficStepTitle(t, s)"></span>
+                        </template>
+                      </span>
+                    </td>
+                    <td><span class="badge" :class="trafficStageClass(t)">{{ t.stage }}</span></td>
+                    <td class="font-mono text-muted">{{ t.key }}</td>
+                  </tr>
+                  <tr v-if="expanded.has(t.key)" class="detail">
+                    <td colspan="7">
+                      <h3>Journey</h3>
+                      <table class="table compact">
+                        <thead>
+                          <tr><th>Event</th><th>From &rarr; to</th><th>Packets</th><th>At hub</th><th>Taken</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                          <template v-for="e in t.events" :key="e.key">
+                            <tr>
+                              <td>
+                                <span class="badge" :class="e.role === 'result' ? 'badge-info' : 'badge-secondary'">{{ e.kind }}</span>
+                                <div v-if="e.stamp" class="text-muted small">resolved {{ when(e.stamp) }} (far side's clock)</div>
+                              </td>
+                              <td class="font-mono">{{ trafficRoute(e) }}</td>
+                              <td class="font-mono small">
+                                <div v-for="h in e.hops" :key="h.packet_id">{{ h.filename }} ({{ h.source_bbs }}&rarr;{{ h.dest_bbs }})</div>
+                              </td>
+                              <td class="font-mono">{{ when(e.at_hub) }}</td>
+                              <td class="font-mono">{{ e.delivered ? when(e.delivered) : 'not yet' }}</td>
+                              <td>
+                                <template v-if="e.kind === 'Message'">
+                                  <span class="text-muted small">contents never shown</span>
+                                </template>
+                                <template v-else-if="authStore.isAdmin && e.revealable && !details[e.key]">
+                                  <button class="btn btn-sm btn-secondary" :disabled="detailsLoading === e.key"
+                                          @click="revealEvent(e.key)">
+                                    {{ detailsLoading === e.key ? 'Revealing…' : 'Reveal (admin)' }}
+                                  </button>
+                                  <div v-if="detailsError[e.key]" class="text-danger small">{{ detailsError[e.key] }}</div>
+                                </template>
+                                <button v-else-if="details[e.key]" class="btn btn-sm btn-secondary" @click="hideEvent(e.key)">Hide</button>
+                              </td>
+                            </tr>
+                            <tr v-if="details[e.key]">
+                              <td colspan="6">
+                                <dl>
+                                  <template v-for="(v, k) in details[e.key].details" :key="k">
+                                    <dt>{{ label(String(k)) }}</dt>
+                                    <dd v-if="typeof v === 'object'" class="font-mono">
+                                      <span v-for="(n, g) in v" :key="g">{{ n }} {{ g }}&nbsp; </span>
+                                    </dd>
+                                    <dd v-else class="font-mono">{{ v }}</dd>
+                                  </template>
+                                </dl>
+                              </td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                      <p v-if="authStore.isAdmin" class="text-muted small">
+                        Reveals show hidden game state and each is logged. Gooie, Bombing and Special Op
+                        contents are not decoded yet.
+                      </p>
+                    </td>
+                  </tr>
+                </template>
                 </template>
               </tbody>
             </table>

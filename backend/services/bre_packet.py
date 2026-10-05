@@ -326,16 +326,25 @@ if __name__ == "__main__":
 
 # ── the rest of the InterBBS traffic ──────────────────────────────────────
 # Everything a player does to another planet, other than an individual attack.
-# Mapped on the rig, each against what the game told the player. As with
-# attacks, `traffic()` reads only what says who did what to whom; what was in it
-# is `traffic_details()`, for the admin reveal. A Message's text is never read:
-# its header ends at MESSAGE_TEXT and nothing here looks past the recipients.
+# Mapped on the rig against what the game told the player, and the Gooie and
+# Special/Bombing Op records from production's own traffic. As with attacks,
+# `traffic()` reads only who did what kind of thing to whom; what was in it is
+# `traffic_details()`, for the admin reveal. A Message's text is never read: its
+# header ends at MESSAGE_TEXT and nothing here looks past the recipients.
+#
+# None of these carry an ID, but each result echoes enough of what it answers
+# to be joined to it: `chain` is that shared part, the same string on a send
+# and on its result (see traffic_trace for how they are matched up).
 TERRORIST_OP, TERRORIST_RESULT = 0x03, 0x04
+BOMBING_OP, BOMBING_RESULT = 0x05, 0x06
 MESSAGE = 0x09
-SPY_REPORT, REPORT, SPY_GUY, TRADE_DEAL = 0x13, 0x15, 0x17, 0x18
+GOOIE_ATTACK, GOOIE_RESULTS = 0x0B, 0x0C
+SPECIAL_OP, SPECIAL_RESULT = 0x0E, 0x0F
+SPY_REPORT, NEWS, REPORT, SPY_GUY, TRADE_DEAL = 0x13, 0x14, 0x15, 0x17, 0x18
 TRAFFIC_TYPES = frozenset({
-    TERRORIST_OP, TERRORIST_RESULT, 0x05, 0x06, MESSAGE, 0x0B, 0x0C, 0x0E, 0x0F,
-    SPY_REPORT, REPORT, SPY_GUY, TRADE_DEAL,
+    TERRORIST_OP, TERRORIST_RESULT, BOMBING_OP, BOMBING_RESULT, MESSAGE,
+    GOOIE_ATTACK, GOOIE_RESULTS, SPECIAL_OP, SPECIAL_RESULT,
+    SPY_REPORT, NEWS, REPORT, SPY_GUY, TRADE_DEAL,
 })
 
 # Terrorist Ops, by their number on the game's menu, which is what the op carries.
@@ -344,12 +353,23 @@ OPERATIONS = {
     5: "Bomb AirBases", 6: "Stir Emigrations", 7: "Spread Propaganda",
     8: "Bomb Food Stores", 9: "Sabotage HQ",
 }
+SEND_SPY = 1
 # A Trade Deal's goods: nine i32s from offset 16, in the order of its menu.
 TRADE_GOODS = ("troopers", "jets", "turrets", "bombers", "food", "gold",
                "agents", "tanks", "carriers")
 MESSAGE_RECIPIENTS = 7      # i32 player IDs, zero-terminated, up to 25 of them
 MESSAGE_TEXT = 114          # where the player's text begins -- never read
 ALL_PLANETS = -999          # the recipient ID of a message to every planet
+
+# The Gooie's life is told to the target in News items, [from][to][text]; the
+# only News the hub follows. The kill is the target telling the sender.
+GOOIE_NEWS = (
+    ("funding completed", "Gooie Funded"),
+    ("construction started", "Gooie Construction"),
+    ("arrives from", "Gooie Warning"),
+    ("destroyed on", "Gooie Destroyed"),
+)
+SEND, RESULT, NOTICE = "send", "result", "notice"
 
 
 @dataclass
@@ -366,7 +386,8 @@ class Traffic:
     from_player: Optional[int] = None
     to_player: Optional[int] = None
     recipients: Optional[List[int]] = None     # Message only
-    pair_key: Optional[str] = None             # joins a Terrorist Op to its result
+    chain: Optional[str] = None                # shared by a send and its result
+    role: Optional[str] = None                 # SEND, RESULT or NOTICE
     stamp: Optional[datetime.datetime] = None  # when the far side resolved it
 
 
@@ -381,23 +402,91 @@ def _i32(d: bytes, o: int) -> int:
     return struct.unpack_from("<i", d, o)[0]
 
 
+def _pascal(d: bytes, o: int) -> str:
+    text = d[o + 1:o + 1 + d[o]].decode("cp437", "replace")
+    return re.sub(r"\^\\[0-9A-Fa-f]{2}", "", text)     # the game's colour codes
+
+
 def traffic(record: Record) -> Optional[Traffic]:
+    """None for anything the hub does not follow -- including any News item
+    that is not about a Gooie."""
     if record.type not in TRAFFIC_TYPES:
         return None
     d, t = record.data, record.type
     out = Traffic(t, record.name, record.src, record.dst)
-    if t in (TERRORIST_OP, TRADE_DEAL) and len(d) >= 10:
+    try:
+        _read(out, d, t)
+    except (IndexError, struct.error):
+        pass                # a short record: who and where is still worth having
+    if t == NEWS and out.role is None:
+        return None
+    return out
+
+
+def _read(out: Traffic, d: bytes, t: int) -> None:
+    if t == TERRORIST_OP:
         out.from_letter, out.to_letter = chr(d[0]), chr(d[1])
         out.from_player, out.to_player = _i32(d, 2), _i32(d, 6)
-        if t == TERRORIST_OP:
-            out.pair_key = d[0:10].hex()
-    elif t == TERRORIST_RESULT and len(d) >= 16:
+        out.chain = f"op:{d[2:10].hex()}:{'spy' if d[17] == SEND_SPY else 'op'}"
+        out.role = SEND
+    elif t == TERRORIST_RESULT:
         # The result travels back: from the target's board to the operative's.
         out.stamp = timestamp(d[0:6])
         out.from_letter, out.to_letter = chr(d[7]), chr(d[6])
         out.from_player, out.to_player = _i32(d, 12), _i32(d, 8)
-        out.pair_key = d[6:16].hex()
-    elif t == MESSAGE and len(d) >= MESSAGE_RECIPIENTS:
+        out.chain = f"op:{d[8:16].hex()}:{'spy' if d[20] == SEND_SPY else 'op'}"
+        out.role = RESULT
+    elif t == SPY_REPORT:
+        # What a successful Send Spy brings home instead of a Terrorist Result:
+        # the target's player ID, then the spy's.
+        out.from_player, out.to_player = _i32(d, 2), _i32(d, 6)
+        out.stamp = timestamp(d[68:74])
+        out.chain = f"op:{(d[6:10] + d[2:6]).hex()}:spy"
+        out.role = RESULT
+    elif t == TRADE_DEAL:
+        out.from_letter, out.to_letter = chr(d[0]), chr(d[1])
+        out.from_player, out.to_player = _i32(d, 2), _i32(d, 6)
+        out.chain = f"trade:{d[2:6].hex()}>{d[11]}"
+        out.role = SEND
+    elif t == REPORT:
+        out.to_player = _i32(d, 2)
+        if _pascal(d, 6).startswith("Trade Deal arrived"):
+            out.chain = f"trade:{d[2:6].hex()}>{d[0]}"
+            out.role = RESULT
+    elif t == BOMBING_OP:
+        # A planet-wide op: the operative's letter and ID, no target realm.
+        out.from_letter, out.from_player = chr(d[0]), _i32(d, 1)
+        out.chain = f"bomb:{d[0:5].hex()}:{d[5]}>{d[6]}:{d[7]}"
+        out.role = SEND
+    elif t == BOMBING_RESULT:
+        out.to_letter, out.to_player = chr(d[0]), _i32(d, 1)
+        out.chain = f"bomb:{d[0:5].hex()}:{d[6]}>{d[5]}:{d[7]}"
+        out.role = RESULT
+    elif t == SPECIAL_OP:
+        out.from_letter, out.to_letter = chr(d[0]), chr(d[1])
+        out.from_player, out.to_player = _i32(d, 2), _i32(d, 6)
+        out.chain = f"sop:{d[2:10].hex()}:{d[12]}"
+        out.role = SEND
+    elif t == SPECIAL_RESULT:
+        out.from_letter, out.to_letter = chr(d[1]), chr(d[0])
+        out.from_player, out.to_player = _i32(d, 6), _i32(d, 2)
+        out.chain = f"sop:{d[2:10].hex()}:{d[12]}"
+        out.role = RESULT
+    elif t in (GOOIE_ATTACK, GOOIE_RESULTS):
+        # [target planet][sending planet]; one Gooie per planet at a time.
+        out.chain = f"gooie:{d[1]}>{d[0]}"
+        out.role = SEND if t == GOOIE_ATTACK else RESULT
+    elif t == NEWS:
+        text = _pascal(d, 2)
+        if "Gooie Kablooie" in text:
+            for phrase, name in GOOIE_NEWS:
+                if phrase in text:
+                    out.name = name
+                    sender, target = (d[1], d[0]) if name == "Gooie Destroyed" else (d[0], d[1])
+                    out.chain = f"gooie:{sender}>{target}"
+                    out.role = NOTICE
+                    break
+    elif t == MESSAGE:
         out.from_letter, out.from_player = chr(d[2]), _i32(d, 3)
         ids = []
         for o in range(MESSAGE_RECIPIENTS, MESSAGE_RECIPIENTS + 25 * 4, 4):
@@ -408,16 +497,6 @@ def traffic(record: Record) -> Optional[Traffic]:
             if v == ALL_PLANETS:
                 break
         out.recipients = ids
-    elif t == SPY_REPORT and len(d) >= 74:
-        out.stamp = timestamp(d[68:74])
-    elif t == REPORT and len(d) >= 6:
-        out.to_player = _i32(d, 2)
-    return out
-
-
-def _pascal(d: bytes, o: int) -> str:
-    text = d[o + 1:o + 1 + d[o]].decode("cp437", "replace")
-    return re.sub(r"\^\\[0-9A-Fa-f]{2}", "", text)     # the game's colour codes
 
 
 def traffic_details(record: Record) -> Optional[dict]:
@@ -437,6 +516,8 @@ def traffic_details(record: Record) -> Optional[dict]:
         return {"realm": _pascal(d, 12), "troopers": _i32(d, 47)}
     if t == REPORT:
         return {"text": _pascal(d, 6)}
+    if t == NEWS:
+        return {"text": _pascal(d, 2)}
     if t == SPY_GUY:
         return {"days": d[2]}
     return None

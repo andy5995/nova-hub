@@ -13,22 +13,39 @@ from backend.schemas.attacks import AttackHop
 
 class TrafficEvent(BaseModel):
     key: str
+    kind: str                         # the game's own name, e.g. "Terrorist Result"
+    role: Optional[str] = None        # "send", "result", "notice"
+    from_planet: int
+    to_planet: int
+    from_letter: Optional[str] = None
+    to_letter: Optional[str] = None
+    stamp: Optional[str] = None       # far side's game clock, where it says
+    at_hub: Optional[str] = None
+    delivered: Optional[str] = None
+    stage: str
+    revealable: bool                  # whether there is anything an admin may reveal
+    hops: List[AttackHop] = []
+
+
+class TrafficJourney(BaseModel):
+    """A send and its result, a Gooie from funding to its end, or one event."""
+    key: str                          # its first event's
     league_id: int
     league_name: Optional[str] = None
-    kind: str                         # the game's own name, e.g. "Terrorist Op"
-    record_type: int
+    kind: str                         # "Terrorist Op", "Trade Deal", "Gooie Kablooie", ...
     from_planet: int
     to_planet: int
     from_letter: Optional[str] = None
     to_letter: Optional[str] = None
     recipients: Optional[str] = None  # Message: "all planets", or realm letters
-    stamp: Optional[str] = None       # far side's game clock, where it says
-    at_hub: Optional[str] = None
-    delivered: Optional[str] = None
+    expects_result: bool
+    sent_at_hub: Optional[str] = None
+    sent_delivered: Optional[str] = None
+    result_kind: Optional[str] = None
+    result_at_hub: Optional[str] = None
+    result_delivered: Optional[str] = None
     stage: str
-    paired_with: Optional[str] = None
-    revealable: bool                  # whether there is anything an admin may reveal
-    hops: List[AttackHop] = []
+    events: List[TrafficEvent] = []
 
 
 class TrafficDetails(BaseModel):

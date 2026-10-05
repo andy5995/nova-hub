@@ -50,8 +50,7 @@ const navigation = computed(() => [
   { name: 'Leagues', path: '/leagues', icon: 'leagues' },
   { name: 'Processing', path: '/processing', icon: 'processing' },
   { name: 'Movements', path: '/movements', icon: 'movements' },
-  { name: 'Attacks', path: '/attacks', icon: 'transit' },
-  { name: 'Traffic', path: '/traffic', icon: 'transit' },
+  { name: 'Attacks & Traffic', path: '/attacks', icon: 'transit' },
   { name: 'Alerts', path: '/alerts', icon: 'alerts' },
 ])
 

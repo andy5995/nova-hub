@@ -310,8 +310,9 @@ class AttackSighting(Base):
 class TrafficSighting(Base):
     """One piece of InterBBS traffic other than an attack, inside one packet.
 
-    Terrorist Ops and their results, trade deals, spy reports, messages, Gooie
-    and Special Op traffic. As with attacks, only who sent what to whom: the
+    Terrorist, Bombing and Special Ops and their results, trade deals, spy
+    reports, messages, and a Gooie's arrival, daily results and News notices.
+    As with attacks, only who sent what to whom: the
     contents are hidden game state, read back from the packet only for an
     admin who asks (and a Message's text, never). The same record relayed by
     the hub is the same bytes, so `event_key` -- a hash of them -- groups the
@@ -325,6 +326,7 @@ class TrafficSighting(Base):
     packet_id = Column(Integer, ForeignKey("packets.id"), nullable=False, index=True)
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False, index=True)
     record_type = Column(Integer, nullable=False)
+    kind = Column(String(30), nullable=False)        # the game's name, or a Gooie News kind
     # The board that wrote the record and the board it is for.
     from_planet = Column(Integer, nullable=False)
     to_planet = Column(Integer, nullable=False)
@@ -334,8 +336,10 @@ class TrafficSighting(Base):
     to_player = Column(Integer, nullable=True)
     # Message only: comma-separated player IDs, or -999 for every planet.
     recipients = Column(String(300), nullable=True)
-    # A Terrorist Op and its result share this (their first ten bytes).
-    pair_key = Column(String(20), nullable=True, index=True)
+    # A send and its result share this, as do a Gooie's notices; role says
+    # which this is ("send", "result", "notice"). See bre_packet.traffic().
+    chain = Column(String(64), nullable=True, index=True)
+    role = Column(String(8), nullable=True)
     stamp = Column(DateTime, nullable=True)
 
     packet = relationship("Packet")

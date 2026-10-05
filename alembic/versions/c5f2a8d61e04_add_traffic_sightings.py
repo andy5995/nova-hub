@@ -1,8 +1,8 @@
 """add_traffic_sightings
 
-The rest of the BRE InterBBS traffic -- Terrorist Ops and results, trade deals,
-spy reports, messages (who to whom only), Gooie and Special Op traffic -- seen in
-each packet. Purely additive like attack_sightings: a rollback loses this
+The rest of the BRE InterBBS traffic -- Terrorist, Bombing and Special Ops and
+their results, trade deals, spy reports, messages (who to whom only), and a
+Gooie's arrival, results and News notices -- seen in each packet. Purely additive like attack_sightings: a rollback loses this
 history and nothing else, and backfill_attacks.py --redo rebuilds it.
 
 Revision ID: c5f2a8d61e04
@@ -34,6 +34,7 @@ def upgrade() -> None:
         sa.Column("packet_id", sa.Integer(), sa.ForeignKey("packets.id"), nullable=False),
         sa.Column("league_id", sa.Integer(), sa.ForeignKey("leagues.id"), nullable=False),
         sa.Column("record_type", sa.Integer(), nullable=False),
+        sa.Column("kind", sa.String(length=30), nullable=False),
         sa.Column("from_planet", sa.Integer(), nullable=False),
         sa.Column("to_planet", sa.Integer(), nullable=False),
         sa.Column("from_letter", sa.String(length=1), nullable=True),
@@ -41,10 +42,11 @@ def upgrade() -> None:
         sa.Column("from_player", sa.Integer(), nullable=True),
         sa.Column("to_player", sa.Integer(), nullable=True),
         sa.Column("recipients", sa.String(length=300), nullable=True),
-        sa.Column("pair_key", sa.String(length=20), nullable=True),
+        sa.Column("chain", sa.String(length=64), nullable=True),
+        sa.Column("role", sa.String(length=8), nullable=True),
         sa.Column("stamp", sa.DateTime(), nullable=True),
     )
-    for col in ("event_key", "packet_id", "league_id", "pair_key"):
+    for col in ("event_key", "packet_id", "league_id", "chain"):
         op.create_index(f"ix_{TABLE}_{col}", TABLE, [col])
 
 

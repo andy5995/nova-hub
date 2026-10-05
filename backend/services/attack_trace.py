@@ -86,15 +86,17 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
             _remember_settings(db, league, packet, bre_packet.league_settings(rec))
         elif rec.type in bre_packet.TRAFFIC_TYPES:
             t = bre_packet.traffic(rec)
+            if t is None:
+                continue        # News that is not about a Gooie
             db.add(TrafficSighting(
                 event_key=bre_packet.event_key(rec), packet_id=packet.id,
-                league_id=league.id, record_type=t.type,
+                league_id=league.id, record_type=t.type, kind=t.name,
                 from_planet=t.from_planet, to_planet=t.to_planet,
                 from_letter=t.from_letter, to_letter=t.to_letter,
                 from_player=t.from_player, to_player=t.to_player,
                 recipients=None if t.recipients is None
                 else ",".join(str(r) for r in t.recipients),
-                pair_key=t.pair_key, stamp=t.stamp,
+                chain=t.chain, role=t.role, stamp=t.stamp,
             ))
             added += 1
     if commit:
