@@ -212,6 +212,146 @@ export const movementsApi = {
     api.get<MovementSummary>('/movements/summary', { params }),
 }
 
+// Attacks API functions
+//
+// Each BRE individual attack, followed through the hub by the ID its result
+// echoes. Never carries unit counts: those are hidden game state.
+export interface AttackHop {
+  is_result: boolean
+  packet_id: number
+  filename: string
+  source_bbs: number | null
+  dest_bbs: number | null
+  at_hub: string | null
+  taken: string | null
+}
+
+export type AttackStage =
+  | 'result delivered'
+  | 'result awaiting pickup'
+  | 'awaiting result'
+  | 'attack awaiting pickup'
+  | 'relay not held'
+  | 'not seen'
+
+export interface AttackJourney {
+  attack_id: string
+  league_id: number
+  league_name: string | null
+  from_planet: number
+  to_planet: number
+  attacker: string
+  target: string
+  attack_type: string | null
+  launched: string | null
+  resolved: string | null
+  attack_at_hub: string | null
+  attack_delivered: string | null
+  result_at_hub: string | null
+  result_delivered: string | null
+  stage: AttackStage
+  lost_attack_days: number
+  mit_due_local: string | null
+  mit_due: string | null
+  attacker_clock_minutes: number | null
+  rollover_after: string | null
+  rollover_before: string | null
+  unheld_relay_to: number | null
+  mit: 'late' | 'possible' | 'overdue' | null
+  hops: AttackHop[]
+}
+
+export interface AttackFilters {
+  days?: number
+  league_id?: number
+  planet?: number
+  attack_id?: string
+  mit?: 'late' | 'possible' | 'overdue' | 'any'
+  limit?: number
+}
+
+// Admin only, fetched per attack on request: hidden game state.
+export type AttackUnit = 'troopers' | 'jets' | 'tanks' | 'bombers'
+
+export interface AttackForces {
+  attack_id: string
+  sent: Record<AttackUnit, number>
+  carriers: number
+  resolved: boolean
+  success: boolean | null
+  regions_captured: number | null
+  loss_percent: number | null
+  lost: Record<AttackUnit, number> | null
+  returned: Record<AttackUnit, number> | null
+  defenders_destroyed: number | null
+}
+
+export const attacksApi = {
+  list: (params: AttackFilters = {}) =>
+    api.get<AttackJourney[]>('/attacks/', { params }),
+  forces: (attackId: string) =>
+    api.get<AttackForces>(`/attacks/${attackId}/forces`),
+}
+
+// InterBBS traffic other than attacks
+export interface TrafficEvent {
+  key: string
+  kind: string
+  role: 'send' | 'result' | 'notice' | null
+  from_planet: number
+  to_planet: number
+  from_letter: string | null
+  to_letter: string | null
+  stamp: string | null
+  at_hub: string | null
+  delivered: string | null
+  stage: string
+  revealable: boolean
+  hops: AttackHop[]
+}
+
+// A send and its result, a Gooie from funding to its end, or one event.
+export interface TrafficJourney {
+  key: string
+  league_id: number
+  league_name: string | null
+  kind: string
+  from_planet: number
+  to_planet: number
+  from_letter: string | null
+  to_letter: string | null
+  recipients: string | null
+  expects_result: boolean
+  sent_at_hub: string | null
+  sent_delivered: string | null
+  result_kind: string | null
+  result_at_hub: string | null
+  result_delivered: string | null
+  stage: string
+  events: TrafficEvent[]
+}
+
+// Admin only, fetched per event on request: hidden game state.
+export interface TrafficDetails {
+  key: string
+  kind: string
+  details: Record<string, any>
+}
+
+export interface TrafficFilters {
+  days?: number
+  league_id?: number
+  planet?: number
+  limit?: number
+}
+
+export const trafficApi = {
+  list: (params: TrafficFilters = {}) =>
+    api.get<TrafficJourney[]>('/traffic/', { params }),
+  details: (key: string) =>
+    api.get<TrafficDetails>(`/traffic/${key}/details`),
+}
+
 // Alerts API functions
 export const alertsApi = {
   list: () =>

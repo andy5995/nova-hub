@@ -2,10 +2,12 @@
 
 Packets clients upload each create their own row, so an inbound route holds a
 true history. Packets the hub generates go through collect_outbound_packets,
-which on a filename collision updates the existing row instead of adding one --
-correct for delivery, fatal for history. Once such a route has been round the
-000-999 numbering, its rows are a fixed table of 1,000 slots and asking it for
-gaps returns "none" no matter what happened.
+which on a filename collision used to update the existing row instead of adding
+one -- correct for delivery, fatal for history. Once such a route has been round
+the 000-999 numbering, its rows are a fixed table of 1,000 slots and asking it
+for gaps returns "none" no matter what happened. The collector now adds a row
+per packet (tests/test_outbound_history.py), but every hub route in production
+was already a slot table by then, so the skip stays.
 
 Reproduced on the rig: 1,100 forced cycles rolled 999 -> 000 at cycle 1,002 and
 then reissued 900b0102.002 onward with fresh contents under names already used.

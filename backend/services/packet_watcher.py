@@ -146,6 +146,9 @@ class PacketWatcher(FileSystemEventHandler):
             self.packet_service.db.add(packet)
             self.packet_service.db.commit()
 
+            from backend.services.attack_trace import record_safely
+            record_safely(self.packet_service.db, packet, content)
+
             logger.info(f"Registered hub-generated packet: {normalized_filename}")
 
         except FileNotFoundError:

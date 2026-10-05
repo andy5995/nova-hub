@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from backend.models.database import League, LeagueMembership, Packet, ProcessingRun, ProcessingRunFile
 from backend.core.database import get_session
 from backend.logging_config import get_logger
+from backend.services.attack_trace import record_safely
 from backend.services.dosemu_runner import DosemuRunner
 from backend.services.packet_service import parse_packet_filename
 from backend.services.sequence_validator import (
@@ -698,15 +699,22 @@ class ProcessingService:
                 # filesystem. rename() raises EXDEV when they don't.
                 shutil.move(str(packet_file), str(dest))
 
-                # Check if already exists in database (case-insensitive via normalization)
+                # The newest row under this name. Still pending: BRE has rewritten
+                # that same packet in place (it grows under a stable name), so
+                # update it. Already downloaded: the sequence number has wrapped and
+                # this is a new packet -- give it its own row, as uploads get, so
+                # the old one's history (when it was written and taken) survives.
                 existing = (
                     self.db.query(Packet)
                     .filter(Packet.filename == normalized_filename)
+                    .order_by(Packet.id.desc())
                     .first()
                 )
+                if existing is not None and existing.is_downloaded:
+                    existing = None
 
                 if existing:
-                    # Update existing record with new data (sequence wraparound)
+                    # Update the pending packet with its rewritten contents
                     existing.source_bbs_index = packet_info["source_bbs_index"]
                     existing.dest_bbs_index = packet_info["dest_bbs_index"]
                     existing.sequence_number = packet_info["sequence_number"]
@@ -714,9 +722,8 @@ class ProcessingService:
                     existing.checksum = file_hash
                     existing.processing_run_id = run_id
                     existing.processed_at = datetime.now()
-                    existing.is_downloaded = False  # Reset so clients see it as new
-                    existing.downloaded_at = None
-                    logger.info(f"Updated outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
+                    existing.file_data = None  # the file on disk is the packet now
+                    logger.info(f"Updated pending outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
                 else:
                     # Create new packet record (file stored on disk at hub_outbound_dir)
                     packet = Packet(
@@ -734,6 +741,8 @@ class ProcessingService:
                     logger.info(f"Collected outbound: {normalized_filename}")
 
                 self.db.commit()
+                # A relayed attack is repacked here; this is the hop to its target.
+                record_safely(self.db, existing or packet, content)
 
             except Exception as e:
                 logger.error(f"Error collecting {packet_file.name}: {e}")

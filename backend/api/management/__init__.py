@@ -10,6 +10,8 @@ This API is used by the Vue.js frontend to:
 
 from fastapi import APIRouter
 
+from .attacks import router as attacks_router
+from .traffic import router as traffic_router
 from .auth import router as auth_router
 from .dashboard import router as dashboard_router
 from .clients import router as clients_router
@@ -56,6 +58,18 @@ management_router.include_router(
     movements_router,
     prefix="/movements",
     tags=["Management API - Movements"]
+)
+
+management_router.include_router(
+    attacks_router,
+    prefix="/attacks",
+    tags=["Management API - Attacks"]
+)
+
+management_router.include_router(
+    traffic_router,
+    prefix="/traffic",
+    tags=["Management API - Traffic"]
 )
 
 management_router.include_router(
