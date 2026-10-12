@@ -27,6 +27,17 @@ All notable changes to Nova Hub will be documented in this file.
   sign-in and first upload; the upgrade fills both in for BBSes already
   running.
 
+### Changed
+- Attacks & Traffic labels each league with its number and game ("015B
+  Medusa Test League 015"), since a BRE and an FE league can share a name,
+  and has a Refresh button that keeps the filters.
+- The console's sidebar stays the height of the window, so sign-out and the
+  version stay on screen on a long page.
+
+### Fixed
+- Opening /join or /how-it-works directly while signed out went to the
+  sign-in page instead.
+
 ## [0.5.1] - 2026-10-12
 
 ### Added
