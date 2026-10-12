@@ -58,6 +58,9 @@ class TestParsePacketFilename:
     def test_empty_string(self):
         assert parse_packet_filename("") is None
 
+    def test_trailing_newline_is_refused(self):
+        assert parse_packet_filename("555B0201.001\n") is None
+
     def test_hex_ff_indices(self):
         result = parse_packet_filename("555BFF01.000")
         assert result is not None
@@ -109,6 +112,18 @@ class TestParseIBPacketFilename:
 
     def test_content_digest_name_is_refused(self):
         assert parse_packet_filename("L555-ABCDEFGHIJKLMNOPQRSTUVWXYZ.brp") is None
+
+    def test_leading_zero_node_is_refused(self):
+        # One packet, one name: IB never pads node numbers
+        assert parse_packet_filename("L555-02-0000000000001-1.brp") is None
+        assert parse_packet_filename("L555-2-0000000000001-01.brp") is None
+        assert parse_packet_filename("L555-2-0000000000001-00.brp") is None
+
+    def test_source_zero_is_refused(self):
+        assert parse_packet_filename("L555-0-0000000000001-1.brp") is None
+
+    def test_trailing_newline_is_refused(self):
+        assert parse_packet_filename("L555-2-0000000000001-1.brp\n") is None
 
     def test_dos_style_ib_name_is_refused(self):
         assert parse_packet_filename("555I0201.001") is None

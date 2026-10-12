@@ -24,7 +24,7 @@ class Game:
     name: str  # "Barren Realms Elite"
     nodelist_prefix: str  # "BRNODES": hub nodelists are BRNODES.<league>
     nodes_file: str  # "brnodes.dat": the nodes file in a game's own folder
-    # Upper-cased packet filename, with groups league, src, dst and seq
+    # Whole upper-cased packet filename, with groups league, src, dst and seq
     packet_pattern: str
     node_base: int = 16  # how src and dst are written in the filename
     seq_base: int = 10  # how seq is written in the filename
@@ -50,7 +50,7 @@ class Game:
         the game writes them in, since that is how the hub stores and compares
         them.
         """
-        m = re.match(self.packet_pattern, filename.upper())
+        m = re.fullmatch(self.packet_pattern, filename.upper())
         if not m:
             return None
         src = int(m["src"], self.node_base)
@@ -69,15 +69,18 @@ class Game:
 
 def _dos_packet_pattern(letter: str) -> str:
     """BRE and FE: 555B0201.001, league + game + source + dest (hex) . seq"""
-    return (rf"^(?P<league>\d{{3}}){letter}(?P<src>[0-9A-F]{{2}})"
-            rf"(?P<dst>[0-9A-F]{{2}})\.(?P<seq>\d{{3}})$")
+    return (rf"(?P<league>\d{{3}}){letter}(?P<src>[0-9A-F]{{2}})"
+            rf"(?P<dst>[0-9A-F]{{2}})\.(?P<seq>\d{{3}})")
 
 
 # Immortal Barons: L555-<src>-<seq>-<dst>.brp, nodes and a 64-bit sequence
 # in base 36, the sequence zero-padded to 13 digits. The hub takes nodes up to
 # MAX_BBS_INDEX. dst 0 is a broadcast to every board.
-_IB_PACKET_PATTERN = (r"^L(?P<league>\d{3})-(?P<src>[0-9A-Z]{1,2})-"
-                      r"(?P<seq>[0-9A-Z]{13})-(?P<dst>[0-9A-Z]{1,2})\.BRP$")
+# No leading zeros, so one packet has only one name.
+_IB_PACKET_PATTERN = (r"L(?P<league>\d{3})-"
+                      r"(?P<src>[1-9A-Z][0-9A-Z]?)-"
+                      r"(?P<seq>[0-9A-Z]{13})-"
+                      r"(?P<dst>0|[1-9A-Z][0-9A-Z]?)\.BRP")
 
 
 GAMES = (
