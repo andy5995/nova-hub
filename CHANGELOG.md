@@ -6,7 +6,7 @@ All notable changes to Nova Hub will be documented in this file.
 
 ### Added
 - **Sysops apply to join; the admin approves.** A public `/join` page takes a
-  signed-in sysop's BBS details (name, location, software, address, OS) and
+  signed-in sysop's BBS details (name, sysop alias, location, address, OS) and
   the leagues they want. The admin reviews the queue under Admin >
   Applications, picking each league's BBS number and FTN address (suggested:
   the BBS's number elsewhere, else the lowest free one). Approving creates the

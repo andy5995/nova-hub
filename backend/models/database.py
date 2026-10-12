@@ -280,7 +280,6 @@ class Application(Base):
     city = Column(String(50), nullable=True)
     state = Column(String(50), nullable=True)
     country = Column(String(50), nullable=True)
-    software = Column(String(100), nullable=True)
     address = Column(String(200), nullable=True)  # telnet or web address
     os = Column(String(10), nullable=True)  # "windows" or "linux"
     league_ids = Column(JSON, nullable=False, default=list)  # leagues asked for

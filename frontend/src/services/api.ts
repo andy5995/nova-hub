@@ -9,16 +9,20 @@ const api = axios.create({
   }
 })
 
+// Pages that need no login (the router marks them requiresAuth: false)
+const PUBLIC_PATHS = ['/login', '/claim/', '/relink/', '/join', '/how-it-works']
+
 // Response interceptor for handling auth errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Redirect to login on 401 (not authenticated)
-    if (error.response?.status === 401) {
+    // Redirect to login on 401 (not authenticated). Not for the "who am I"
+    // check every page load makes: a 401 there only means signed out, and
+    // the router's guard decides whether this page needs a login. Redirecting
+    // here sent anyone opening a public page directly to /login.
+    if (error.response?.status === 401 && error.config?.url !== '/auth/me') {
       // Only redirect if not already on a page that needs no login
-      const publicPage = ['/login', '/claim/', '/relink/'].some((p) =>
-        window.location.pathname.startsWith(p)
-      )
+      const publicPage = PUBLIC_PATHS.some((p) => window.location.pathname.startsWith(p))
       if (!publicPage) {
         window.location.href = '/login'
       }
@@ -28,6 +32,25 @@ api.interceptors.response.use(
 )
 
 export default api
+
+// What went wrong, as a sentence. FastAPI's own validation (422) answers with
+// a list of {loc, msg} objects rather than a string; shown raw, that's a JSON
+// dump. Names the field each one is about: "ftn_address: String should
+// have at least 1 character".
+export function apiError(e: any, fallback: string): string {
+  const detail = e?.response?.data?.detail
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail) && detail.length) {
+    return detail
+      .map((d: any) => {
+        const field = [...(d?.loc ?? [])].reverse().find((part: unknown) => typeof part === 'string' && part !== 'body')
+        return field ? `${String(field).replace(/_/g, ' ')}: ${d?.msg}` : d?.msg
+      })
+      .filter(Boolean)
+      .join('; ')
+  }
+  return fallback
+}
 
 // Auth API functions
 export const authApi = {
@@ -161,7 +184,6 @@ export interface Application {
   city: string | null
   state: string | null
   country: string | null
-  software: string | null
   address: string | null
   os: string | null
   leagues: JoinableLeague[]
@@ -197,7 +219,6 @@ export interface JoinRequest {
   city?: string
   state?: string
   country?: string
-  software?: string
   address?: string
   os?: 'windows' | 'linux' | null
   league_ids: number[]

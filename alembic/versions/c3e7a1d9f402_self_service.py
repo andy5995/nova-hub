@@ -44,7 +44,6 @@ def upgrade() -> None:
             sa.Column("city", sa.String(length=50), nullable=True),
             sa.Column("state", sa.String(length=50), nullable=True),
             sa.Column("country", sa.String(length=50), nullable=True),
-            sa.Column("software", sa.String(length=100), nullable=True),
             sa.Column("address", sa.String(length=200), nullable=True),
             sa.Column("os", sa.String(length=10), nullable=True),
             sa.Column("league_ids", sa.JSON(), nullable=False),

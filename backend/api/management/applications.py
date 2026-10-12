@@ -60,7 +60,6 @@ def _response(db: Session, application: Application) -> ApplicationResponse:
         city=application.city,
         state=application.state,
         country=application.country,
-        software=application.software,
         address=application.address,
         os=application.os,
         leagues=[_league(lg) for lg in sorted(leagues, key=lambda lg: lg.full_id)],

@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { applicationsApi, type Application, type ApplicationReview } from '@/services/api'
+import { apiError, applicationsApi, type Application, type ApplicationReview } from '@/services/api'
 import { useCopy } from '@/clipboard'
 
 // The join queue. Admin only. Approving a join creates the BBS, its owner,
@@ -50,7 +50,7 @@ async function load() {
   try {
     rows.value = (await applicationsApi.list(status.value)).data
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'Could not load applications.'
+    error.value = apiError(e, 'Could not load applications.')
   } finally {
     loading.value = false
   }
@@ -82,7 +82,7 @@ async function open(id: number) {
       taken: l.taken,
     }))
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'Could not open that application.'
+    error.value = apiError(e, 'Could not open that application.')
   }
 }
 
@@ -117,6 +117,11 @@ async function approve() {
     dialogError.value = 'Grant at least one league.'
     return
   }
+  const missing = chosen.filter((g) => !g.ftn_address.trim() || !g.bbs_index)
+  if (missing.length) {
+    dialogError.value = `Give a BBS number and an FTN address for ${missing.map((g) => g.full_id).join(', ')}.`
+    return
+  }
   deciding.value = true
   try {
     const response = (
@@ -135,7 +140,7 @@ async function approve() {
     review.value = null
     await load()
   } catch (e: any) {
-    dialogError.value = e.response?.data?.detail || 'Could not approve it.'
+    dialogError.value = apiError(e, 'Could not approve it.')
   } finally {
     deciding.value = false
   }
@@ -150,7 +155,7 @@ async function reject() {
     review.value = null
     await load()
   } catch (e: any) {
-    dialogError.value = e.response?.data?.detail || 'Could not reject it.'
+    dialogError.value = apiError(e, 'Could not reject it.')
   } finally {
     deciding.value = false
   }
@@ -237,12 +242,10 @@ function location(a: Application): string {
               <dt>Applicant</dt>
               <dd>{{ review.application.applicant }} · {{ review.application.email }}</dd>
               <template v-if="isJoin">
-                <dt>Sysop</dt>
+                <dt>Sysop alias</dt>
                 <dd>{{ review.application.sysop_name || '-' }}</dd>
                 <dt>Location</dt>
                 <dd>{{ location(review.application) }}</dd>
-                <dt>Software</dt>
-                <dd>{{ review.application.software || '-' }}</dd>
                 <dt>Address</dt>
                 <dd class="font-mono">{{ review.application.address || '-' }}</dd>
                 <dt>Runs on</dt>

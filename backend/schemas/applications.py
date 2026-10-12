@@ -21,7 +21,6 @@ class JoinApplicationRequest(BaseModel):
     city: Optional[str] = Field(None, max_length=50)
     state: Optional[str] = Field(None, max_length=50)
     country: Optional[str] = Field(None, max_length=50)
-    software: Optional[str] = Field(None, max_length=100)
     address: Optional[str] = Field(None, max_length=200)
     os: Optional[Literal["windows", "linux"]] = None
     league_ids: List[int]
@@ -55,7 +54,6 @@ class ApplicationResponse(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
-    software: Optional[str] = None
     address: Optional[str] = None
     os: Optional[str] = None
     leagues: List[JoinableLeague]

@@ -119,7 +119,6 @@ JOIN = {
     "city": "St Helier",
     "state": "Jersey",
     "country": "Channel Islands",
-    "software": "Mystic 1.12",
     "address": "telnet://jj.example:23",
     "os": "linux",
     "note": "Long-time BRE player.",

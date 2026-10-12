@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { applicationsApi, authApi, type Application, type JoinableLeague } from '@/services/api'
+import { apiError, applicationsApi, authApi, type Application, type JoinableLeague } from '@/services/api'
 
 // A sysop applying to join with a new BBS. Public, but applying needs a
 // sign-in, which confirms the email and keeps out drive-by spam. The admin
@@ -23,7 +23,6 @@ const form = reactive({
   city: '',
   state: '',
   country: '',
-  software: '',
   address: '',
   os: '' as '' | 'windows' | 'linux',
   league_ids: [] as number[],
@@ -45,7 +44,7 @@ async function load() {
       mine.value = m.data
     }
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'The hub could not be reached.'
+    error.value = apiError(e, 'The hub could not be reached.')
   } finally {
     loading.value = false
   }
@@ -69,7 +68,7 @@ async function submit() {
     })
     mine.value = (await applicationsApi.mine()).data
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'The application could not be sent.'
+    error.value = apiError(e, 'The application could not be sent.')
   } finally {
     submitting.value = false
   }
@@ -81,7 +80,7 @@ async function withdraw(application: Application) {
     await applicationsApi.withdraw(application.id)
     mine.value = (await applicationsApi.mine()).data
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'Could not withdraw it.'
+    error.value = apiError(e, 'Could not withdraw it.')
   }
 }
 
@@ -108,7 +107,7 @@ const STATUS_TEXT: Record<Application['status'], string> = {
       <!-- Signed out -->
       <template v-else-if="!authStore.isAuthenticated">
         <p>
-          Run a BBS and want it in a Barren Realms Elite or Falcon's Eye league here? Apply with your
+          Run a BBS and want to join a Barren Realms Elite or Falcon's Eye league? Apply with your
           BBS's details and the leagues you'd like. The hub admin reviews each application; once
           approved, your BBS's credentials wait for you when you sign in.
         </p>
@@ -178,8 +177,9 @@ const STATUS_TEXT: Record<Application['status'], string> = {
             <small>As it appears in the games' nodes file and the league nodelist.</small>
           </label>
           <label>
-            Your name (as sysop)
+            Your alias (as sysop)
             <input v-model="form.sysop_name" maxlength="100" />
+            <small>We don't need your full name.</small>
           </label>
           <div class="row">
             <label>City <input v-model="form.city" maxlength="50" /></label>
@@ -187,10 +187,6 @@ const STATUS_TEXT: Record<Application['status'], string> = {
             <label>Country <input v-model="form.country" maxlength="50" /></label>
           </div>
           <small class="hint">Your location lines in the nodelist other BBSes see.</small>
-          <label>
-            BBS software
-            <input v-model="form.software" maxlength="100" placeholder="e.g. Mystic, Synchronet, WWIV" />
-          </label>
           <label>
             Telnet or web address
             <input v-model="form.address" maxlength="200" placeholder="telnet://bbs.example.com:23" />
