@@ -4,14 +4,13 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
-### Added (2026-08-06)
-- Nodelist downloads now honour conditional requests. `GET /service/api/v1/leagues/{id}/nodelist`
-  answers `304 Not Modified` to a matching `If-None-Match`, or to an `If-Modified-Since` no older
-  than the file. Starlette's `FileResponse` was already sending `ETag` and `Last-Modified` but
-  never answering 304, so polling clients re-fetched an unchanged nodelist on every sync. A 304
-  deliberately does not touch `downloaded_at`, which keeps meaning "last actual transfer".
-
 ### Added
+- Nodelist downloads honour conditional requests (#80).
+  `GET /service/api/v1/leagues/{id}/nodelist` answers `304 Not Modified` to a
+  matching `If-None-Match`, or to an `If-Modified-Since` no older than the
+  file. The hub already sent `ETag` and `Last-Modified` but never answered 304,
+  so the PowerShell client re-fetched an unchanged nodelist on every sync. A
+  304 leaves `downloaded_at` alone, so it still means the last real transfer.
 - An admin can rename a league and edit its description from the league's
   Edit dialog. The name is only shown in the console; the league number and
   game, which the games and nodelists use, don't change. Each edit to a
@@ -21,7 +20,7 @@ All notable changes to Nova Hub will be documented in this file.
 - Deleting a BBS that was still in a league failed with a server error. The
   hub now refuses, naming the leagues, and the Delete dialog says so before
   you press it: remove the BBS from its leagues first.
-- **"Routes/BBS info command failed: Unknown error" after every run (#83).**
+- **"Routes/BBS info command failed: Unknown error" after every run (#83, #85).**
   BRE and FE end `ROUTEINFO` and `BBSINFO` with DOS errorlevel 1 even when they
   succeed. Since 0.3.0 passed the real exit code through (`script -e`), each
   working run logged two false warnings (1,204 pairs on production since
