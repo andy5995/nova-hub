@@ -10,6 +10,11 @@ All notable changes to Nova Hub will be documented in this file.
   game, which the games and nodelists use, don't change. Each edit to a
   league is recorded in the audit log.
 
+### Fixed
+- Deleting a BBS that was still in a league failed with a server error. The
+  hub now refuses, naming the leagues, and the Delete dialog says so before
+  you press it: remove the BBS from its leagues first.
+
 ### Upgrading
 - `backfill_attacks.py` fills the Attacks and Traffic views from the packets
   still on disk, for an upgrade from 0.4.0 or earlier. It only adds rows and

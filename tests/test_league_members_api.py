@@ -592,3 +592,32 @@ def test_sysop_cannot_rename_a_league(api, world):
     assert r.status_code == 403
     db.expire_all()
     assert db.get(League, world["league"]).name == "Test 900B"
+
+
+# -- deleting a BBS ---------------------------------------------------------
+
+def test_bbs_still_in_a_league_cannot_be_deleted(api, world):
+    client, db = api
+
+    r = client.delete(f"{CLIENTS}/{world['alpha']}")
+
+    assert r.status_code == 409
+    assert r.json()["detail"] == ("Alpha is still a member of 900B. "
+                                  "Remove it from those leagues first.")
+    db.expire_all()
+    assert db.get(Client, world["alpha"]) is not None
+    assert _member(db, world["ma"]) == (2, "135:135/20")
+
+
+def test_bbs_removed_from_its_leagues_can_be_deleted(api, world):
+    client, db = api
+    assert client.delete(f"{LEAGUES}/{world['league']}/members/{world['alpha']}").status_code == 200
+
+    r = client.delete(f"{CLIENTS}/{world['alpha']}")
+
+    assert r.status_code == 200
+    db.expire_all()
+    assert db.get(Client, world["alpha"]) is None
+    assert db.get(FtnAddress, world["a20"]) is None
+    # The other member is untouched.
+    assert _member(db, world["mb"]) == (5, "135:135/21")

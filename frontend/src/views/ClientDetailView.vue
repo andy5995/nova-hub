@@ -173,6 +173,17 @@ async function handleRegenerateSecret() {
   }
 }
 
+// The leagues this BBS is still in. The hub refuses to delete it until it has
+// been removed from each, so say so before the admin presses Delete.
+const memberOf = computed(() =>
+  (clientsStore.currentClient?.league_memberships ?? []).map((m) => m.full_id)
+)
+
+function openDeleteModal() {
+  clientsStore.clearError()
+  showDeleteModal.value = true
+}
+
 async function handleDelete() {
   const success = await clientsStore.deleteClient(clientId.value)
   if (success) {
@@ -252,7 +263,7 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
             >
               {{ clientsStore.currentClient.is_active ? 'Disable' : 'Enable' }}
             </button>
-            <button class="btn btn-danger" @click="showDeleteModal = true">Delete</button>
+            <button class="btn btn-danger" @click="openDeleteModal">Delete</button>
           </div>
         </header>
 
@@ -606,14 +617,30 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
             <button class="modal-close" @click="showDeleteModal = false">&times;</button>
           </div>
           <div class="modal-body">
-            <p>Are you sure you want to delete <strong>{{ clientsStore.currentClient?.bbs_name }}</strong>?</p>
-            <p class="text-muted mt-2">This action cannot be undone.</p>
+            <div v-if="clientsStore.error" class="alert alert-error mb-4">
+              {{ clientsStore.error }}
+            </div>
+            <template v-if="memberOf.length">
+              <p>
+                <strong>{{ clientsStore.currentClient?.bbs_name }}</strong> is still a member of
+                {{ memberOf.join(', ') }}. Remove it from those leagues first.
+              </p>
+            </template>
+            <template v-else>
+              <p>Are you sure you want to delete <strong>{{ clientsStore.currentClient?.bbs_name }}</strong>?</p>
+              <p class="text-muted mt-2">This action cannot be undone.</p>
+            </template>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" @click="showDeleteModal = false">
               Cancel
             </button>
-            <button type="button" class="btn btn-danger" @click="handleDelete" :disabled="clientsStore.loading">
+            <button
+              type="button"
+              class="btn btn-danger"
+              @click="handleDelete"
+              :disabled="clientsStore.loading || memberOf.length > 0"
+            >
               Delete Client
             </button>
           </div>

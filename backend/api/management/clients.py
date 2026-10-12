@@ -377,6 +377,16 @@ async def delete_client(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
+    # A membership is what puts a BBS in a league's nodelist, so taking a BBS
+    # out of its leagues is a step of its own, not a side effect of this one.
+    leagues = sorted(m.league.full_id for m in client.league_memberships)
+    if leagues:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{client.bbs_name} is still a member of {', '.join(leagues)}. "
+                   "Remove it from those leagues first.",
+        )
+
     client_name = client.client_id
     # Its addresses go with it, so they can be assigned to another BBS.
     for address in client.ftn_addresses:
