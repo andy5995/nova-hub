@@ -156,6 +156,11 @@ function downloadConfig() {
           >Linux</button>
         </div>
 
+        <p class="text-muted">
+          New to Nova Hub? <router-link to="/how-it-works">How it works</router-link> explains what
+          replaces your mailer, tosser and nodelist.
+        </p>
+
         <ol class="steps">
           <li>
             Download Nova Client from <a :href="CLIENT_REPO" target="_blank" rel="noopener">{{ CLIENT_REPO }}</a>
@@ -208,6 +213,9 @@ python daemon.py --verbose</pre>
           <button class="btn btn-primary" :disabled="claiming" @click="handleClaim">
             {{ claiming ? 'Claiming...' : 'Claim credentials' }}
           </button>
+          <p class="text-muted how-it-works">
+            New to Nova Hub? <router-link to="/how-it-works">How it works</router-link>
+          </p>
         </template>
 
         <template v-else-if="status.state === 'used'">
@@ -304,6 +312,10 @@ python daemon.py --verbose</pre>
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1rem;
+}
+
+.how-it-works {
+  margin-top: 1rem;
 }
 
 .steps li {

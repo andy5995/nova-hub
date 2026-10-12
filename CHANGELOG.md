@@ -5,6 +5,17 @@ All notable changes to Nova Hub will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **A public "How it works" page** at `/how-it-works`, for a sysop deciding
+  whether to join. It maps each FTN piece (mailer, session password, tosser,
+  nodelist, maintenance event) to what replaces it, says what stays on their
+  machine, which client to run on Windows or Linux, what a good first run
+  looks like, and the gotchas that have bitten live nodes. No sign-in needed;
+  linked from the sign-in page and from claim links. The client download is
+  the page's call to action; the hub's own source sits apart in a "For the
+  curious" box.
+- `export_openapi.py` writes the Service API's OpenAPI spec as JSON, with the
+  hub version in `info.version`. nova-client vendors it as
+  `openapi/service-api.json` and checks its mock hub against it in CI.
 - Nodelist downloads honour conditional requests (#80).
   `GET /service/api/v1/leagues/{id}/nodelist` answers `304 Not Modified` to a
   matching `If-None-Match`, or to an `If-Modified-Since` no older than the

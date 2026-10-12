@@ -25,6 +25,13 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      // What replaces each FTN piece, and where to get the client. Public.
+      path: '/how-it-works',
+      name: 'how-it-works',
+      component: () => import('@/views/HowItWorksView.vue'),
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/',
       redirect: '/dashboard'
     },

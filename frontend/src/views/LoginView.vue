@@ -150,7 +150,10 @@ async function handleLogin() {
                 </form>
             </div>
 
-            <p class="login-footer text-muted">Nova Hub v{{ appVersion }}</p>
+            <p class="login-footer text-muted">
+                Nova Hub v{{ appVersion }} ·
+                <router-link to="/how-it-works">How it works</router-link>
+            </p>
         </div>
     </div>
 </template>
@@ -231,6 +234,11 @@ async function handleLogin() {
     text-align: center;
     margin-top: 1.5rem;
     font-size: 0.75rem;
+}
+
+.login-footer a {
+    color: inherit;
+    text-decoration: underline;
 }
 
 .spinner {
