@@ -15,7 +15,7 @@ from typing import Optional
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from backend.models.database import AuditEvent, Client, SysopUser
+from backend.models.database import AuditEvent, Client, League, SysopUser
 
 
 def _describe(target) -> tuple[Optional[str], Optional[int], Optional[str]]:
@@ -25,6 +25,8 @@ def _describe(target) -> tuple[Optional[str], Optional[int], Optional[str]]:
         return "client", target.id, target.bbs_name
     if isinstance(target, SysopUser):
         return "user", target.id, target.username
+    if isinstance(target, League):
+        return "league", target.id, target.full_id
     raise TypeError(f"no audit description for {type(target).__name__}")
 
 

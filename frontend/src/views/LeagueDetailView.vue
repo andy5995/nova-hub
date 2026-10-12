@@ -19,6 +19,8 @@ const showEditModal = ref(false)
 const showDeleteModal = ref(false)
 // The hub is node 1 of this league but has no membership row, so its nodelist
 // entry is configured here rather than being derived from a client.
+const editName = ref('')
+const editDescription = ref('')
 const editHubFidonet = ref('')
 const editHubRoutesMail = ref(true)
 const deleteConfirmInput = ref('')
@@ -92,6 +94,8 @@ onMounted(async () => {
 
 function openEditModal() {
   if (leaguesStore.currentLeague) {
+    editName.value = leaguesStore.currentLeague.name
+    editDescription.value = leaguesStore.currentLeague.description || ''
     editHubFidonet.value = leaguesStore.currentLeague.hub_fidonet_address || ''
     editHubRoutesMail.value = leaguesStore.currentLeague.hub_routes_mail !== false
     leaguesStore.clearError()
@@ -101,6 +105,8 @@ function openEditModal() {
 
 async function handleEdit() {
   const success = await leaguesStore.updateLeague(leagueId.value, {
+    name: editName.value,
+    description: editDescription.value,
     hub_fidonet_address: editHubFidonet.value,
     hub_routes_mail: editHubRoutesMail.value
   })
@@ -401,6 +407,23 @@ async function handleDelete() {
                 {{ leaguesStore.error }}
               </div>
               <div class="form-group">
+                <label for="editName">League Name</label>
+                <input id="editName" v-model="editName" type="text" maxlength="100" required />
+                <small class="form-hint">
+                  Only shown in the console. The league's number and game are
+                  what the games and nodelists use, and they don't change.
+                </small>
+              </div>
+              <div class="form-group">
+                <label for="editDescription">Description (optional)</label>
+                <textarea
+                  id="editDescription"
+                  v-model="editDescription"
+                  placeholder="Brief description of the league"
+                  rows="2"
+                ></textarea>
+              </div>
+              <div class="form-group">
                 <label for="editHubFidonet">Hub FidoNet Address</label>
                 <input
                   id="editHubFidonet"
@@ -434,7 +457,11 @@ async function handleDelete() {
               <button type="button" class="btn btn-secondary" @click="showEditModal = false">
                 Cancel
               </button>
-              <button type="submit" class="btn btn-primary" :disabled="leaguesStore.loading">
+              <button
+                type="submit"
+                class="btn btn-primary"
+                :disabled="leaguesStore.loading || !editName.trim()"
+              >
                 Save Changes
               </button>
             </div>

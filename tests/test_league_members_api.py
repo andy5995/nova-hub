@@ -533,3 +533,62 @@ def test_sysops_can_read_the_address_book(api, world):
     _as_sysop()
 
     assert client.get(ADDRESS_BOOK).status_code == 200
+
+
+# -- league name and description --------------------------------------------
+
+def test_admin_renames_a_league_and_it_is_audited(api, world):
+    from backend.models.database import AuditEvent
+    client, db = api
+
+    r = client.put(f"{LEAGUES}/{world['league']}",
+                   json={"name": "  Eclipse League ", "description": "Season 3"})
+
+    assert r.status_code == 200
+    assert (r.json()["name"], r.json()["description"]) == ("Eclipse League", "Season 3")
+    event = db.query(AuditEvent).filter_by(action="league.updated").one()
+    assert (event.target_type, event.target_id, event.target) == ("league", world["league"], "900B")
+    assert event.detail == ("name: 'Test 900B' -> 'Eclipse League'; "
+                            "description: None -> 'Season 3'")
+
+
+def test_blank_name_is_refused_and_nothing_changes(api, world):
+    client, db = api
+
+    r = client.put(f"{LEAGUES}/{world['league']}", json={"name": "   ", "description": "x"})
+
+    assert r.status_code == 422
+    db.expire_all()
+    league = db.get(League, world["league"])
+    assert (league.name, league.description) == ("Test 900B", None)
+
+
+def test_empty_description_clears_it(api, world):
+    client, db = api
+    client.put(f"{LEAGUES}/{world['league']}", json={"description": "Season 3"})
+
+    r = client.put(f"{LEAGUES}/{world['league']}", json={"description": ""})
+
+    assert r.status_code == 200
+    assert r.json()["description"] is None
+
+
+def test_saving_unchanged_values_writes_no_audit_event(api, world):
+    from backend.models.database import AuditEvent
+    client, db = api
+
+    r = client.put(f"{LEAGUES}/{world['league']}", json={"name": "Test 900B"})
+
+    assert r.status_code == 200
+    assert db.query(AuditEvent).count() == 0
+
+
+def test_sysop_cannot_rename_a_league(api, world):
+    client, db = api
+    _as_sysop()
+
+    r = client.put(f"{LEAGUES}/{world['league']}", json={"name": "Mine now"})
+
+    assert r.status_code == 403
+    db.expire_all()
+    assert db.get(League, world["league"]).name == "Test 900B"

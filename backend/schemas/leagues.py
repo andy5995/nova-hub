@@ -42,6 +42,18 @@ class LeagueUpdate(BaseModel):
     hub_routes_mail: Optional[bool] = None
     is_active: Optional[bool] = None
 
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("A league needs a name")
+        if len(v) > 100:
+            raise ValueError("A league name can be at most 100 characters")
+        return v
+
 
 class LeagueResponse(BaseModel):
     """League response with member count"""

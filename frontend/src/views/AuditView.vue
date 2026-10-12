@@ -57,6 +57,7 @@ onMounted(() => load())
 
 function targetLink(e: AuditEvent): string | null {
   if (e.target_type === 'client' && e.target_id) return `/clients/${e.target_id}`
+  if (e.target_type === 'league' && e.target_id) return `/leagues/${e.target_id}`
   return null
 }
 </script>

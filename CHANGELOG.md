@@ -4,6 +4,17 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- An admin can rename a league and edit its description from the league's
+  Edit dialog. The name is only shown in the console; the league number and
+  game, which the games and nodelists use, don't change. Each edit to a
+  league is recorded in the audit log.
+
+### Upgrading
+- `backfill_attacks.py` fills the Attacks and Traffic views from the packets
+  still on disk, for an upgrade from 0.4.0 or earlier. It only adds rows and
+  can be run again safely.
+
 ## [0.5.0] - 2026-10-12
 
 ### Added

@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from backend.core.database import get_db
 from backend.core.scope import Scope, get_scope
 from backend.core.security import require_admin
 from backend.logging_config import get_logger
+from backend.services import audit
 from backend.services.games import game_for_letter
 from backend.models.database import (
     Client,
@@ -279,6 +280,7 @@ async def create_league(
 
 @router.put("/{league_id}", response_model=LeagueResponse, summary="Update League")
 async def update_league(
+    http_request: Request,
     league_id: int,
     request: LeagueUpdate,
     current_user: SysopUser = Depends(require_admin),
@@ -315,10 +317,12 @@ async def update_league(
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
 
+    before = {f: getattr(league, f) for f in
+              ("name", "description", "hub_fidonet_address", "hub_routes_mail", "is_active")}
     if request.name is not None:
         league.name = request.name
     if request.description is not None:
-        league.description = request.description if request.description else None
+        league.description = request.description.strip() or None
     if request.dosemu_path is not None:
         league.dosemu_path = request.dosemu_path if request.dosemu_path else None
     if request.game_executable is not None:
@@ -331,6 +335,11 @@ async def update_league(
     if request.is_active is not None:
         league.is_active = request.is_active
 
+    changes = [f"{f}: {old!r} -> {getattr(league, f)!r}"
+               for f, old in before.items() if getattr(league, f) != old]
+    if changes:
+        audit.record(db, "league.updated", actor=current_user, target=league,
+                     detail="; ".join(changes), request=http_request)
     db.commit()
     db.refresh(league)
 
