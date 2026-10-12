@@ -34,7 +34,13 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const journeys = ref<AttackJourney[]>([])
 const traffic = ref<TrafficJourney[]>([])
-const leagues = ref<Array<{ id: number; name: string }>>([])
+const leagues = ref<Array<{ id: number; name: string; full_id: string }>>([])
+// "015B Medusa Test League 015": two leagues can share a number and even a
+// name, one BRE and one FE, so the name alone doesn't say which.
+const leagueLabels = computed(() => new Map(leagues.value.map((l) => [l.id, `${l.full_id} ${l.name}`])))
+function leagueLabel(id: number, name?: string | null): string {
+  return leagueLabels.value.get(id) ?? name ?? '-'
+}
 const expanded = ref<Set<string>>(new Set())
 
 const days = ref(14)
@@ -303,6 +309,10 @@ watch([days, leagueId, planet, onlyMit], load)
             <option :value="30">Last 30 days</option>
             <option :value="90">Last 90 days</option>
           </select>
+          <!-- Reloads with the filters as they are; F5 starts the page afresh. -->
+          <button class="btn btn-secondary" :disabled="loading" @click="load">
+            {{ loading ? 'Refreshing...' : 'Refresh' }}
+          </button>
         </div>
       </header>
 
@@ -354,7 +364,7 @@ watch([days, leagueId, planet, onlyMit], load)
               </select>
               <select v-model="leagueId" class="form-select">
                 <option :value="undefined">All leagues</option>
-                <option v-for="l in leagues" :key="l.id" :value="l.id">{{ l.name }}</option>
+                <option v-for="l in leagues" :key="l.id" :value="l.id">{{ leagueLabel(l.id, l.name) }}</option>
               </select>
               <input v-model.number="planet" type="number" min="1" class="form-input narrow"
                      placeholder="Planet" title="Attacker's or target's planet" />
@@ -394,7 +404,7 @@ watch([days, leagueId, planet, onlyMit], load)
                     <td class="font-mono" title="On the attacker board's clock -- the Date: on its MIT report">
                       {{ when(j.launched) }}
                     </td>
-                    <td>{{ j.league_name || '-' }}</td>
+                    <td>{{ leagueLabel(j.league_id, j.league_name) }}</td>
                     <td class="font-mono">
                       {{ j.from_planet }}{{ j.attacker }} &rarr; {{ j.to_planet }}{{ j.target }}
                     </td>
@@ -522,7 +532,7 @@ watch([days, leagueId, planet, onlyMit], load)
                 <template v-for="t in row.traffic ? [row.traffic] : []" :key="t.key">
                   <tr class="clickable" @click="toggle(t.key)">
                     <td class="font-mono" title="Reached the hub">{{ when(row.at) }}</td>
-                    <td>{{ t.league_name || '-' }}</td>
+                    <td>{{ leagueLabel(t.league_id, t.league_name) }}</td>
                     <td class="font-mono">{{ trafficRoute(t) }}</td>
                     <td>{{ t.kind }}</td>
                     <td>

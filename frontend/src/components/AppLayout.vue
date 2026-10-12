@@ -160,6 +160,13 @@ function toggleSidebar() {
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
+  /* The height of the window, not the page: on a long page the footer
+     (sign-out, version) stays on screen instead of following the content
+     down. The nav scrolls by itself if it ever outgrows the window. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  flex-shrink: 0;
 }
 
 .sidebar-collapsed .sidebar {
