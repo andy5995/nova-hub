@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
 ### Added
 - **Sysops apply to join; the admin approves.** A public `/join` page takes a
   signed-in sysop's BBS details (name, sysop alias, location, address, OS) and
@@ -37,6 +39,11 @@ All notable changes to Nova Hub will be documented in this file.
 ### Fixed
 - Opening /join or /how-it-works directly while signed out went to the
   sign-in page instead.
+
+### Upgrading
+- One migration: the applications table, each BBS's first sign-in and first
+  upload (filled in from its history), and claim links bound to an account.
+  Claim links already issued stay unbound and keep working.
 
 ## [0.5.1] - 2026-10-12
 
