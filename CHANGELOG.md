@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-12
+
 ### Added
 - **A public "How it works" page** at `/how-it-works`, for a sysop deciding
   whether to join. It maps each FTN piece (mailer, session password, tosser,
