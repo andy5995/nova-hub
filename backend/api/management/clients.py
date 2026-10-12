@@ -36,8 +36,13 @@ from backend.schemas.clients import (
     OwnerRequest,
     PacketHistoryItem,
 )
-from backend.schemas.claim import ClaimLinkIssued, ClaimLinkStatus
-from backend.services import audit, claim_links
+from backend.schemas.claim import (
+    ClaimLinkCollected,
+    ClaimLinkIssued,
+    ClaimLinkRequest,
+    ClaimLinkStatus,
+)
+from backend.services import applications, audit, claim_links
 from backend.services.stats_service import StatsService
 
 logger = get_logger(context="management_clients")
@@ -216,6 +221,10 @@ async def get_client(
         league_memberships=league_memberships,
         ftn_addresses=[_address_info(a) for a in client.ftn_addresses],
         owners=[_owner_info(o, scope.user) for o in client.owners],
+        stage=applications.stage(db, client),
+        first_token_at=utc(client.first_token_at),
+        first_upload_at=utc(client.first_upload_at),
+        claim_waiting=claim_links.ready_for(db, client.id, scope.user) is not None,
     )
 
 
@@ -406,6 +415,7 @@ async def delete_client(
 async def issue_claim_link(
     client_id: int,
     request: Request,
+    body: Optional[ClaimLinkRequest] = None,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -417,15 +427,28 @@ async def issue_claim_link(
     link is claimed; claiming generates a new secret, which replaces the
     current one.
 
+    **Request Body (optional):** `user_id` binds the link to one of the BBS's
+    owners: only that account, signed in, can claim it, and it waits for them
+    in the console too. Without it the link is unbound, for a sysop with no
+    account.
+
     **Returns:** the link (shown only here) and its expiry
     """
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+    owner = None
+    if body is not None and body.user_id is not None:
+        owner = next((o for o in client.owners if o.id == body.user_id), None)
+        if owner is None:
+            raise HTTPException(status_code=400,
+                                detail="A link can only be bound to one of the BBS's owners")
 
-    token, link, superseded = claim_links.issue(db, client, current_user.username)
+    token, link, superseded = claim_links.issue(db, client, current_user.username, user=owner)
     audit.record(db, "claim_link.issued", actor=current_user, target=client,
-                 detail=f"link {link.id}, expires {link.expires_at:%Y-%m-%d %H:%M} UTC"
+                 detail=f"link {link.id}"
+                 + (f" for {owner.username}" if owner else ", unbound")
+                 + f", expires {link.expires_at:%Y-%m-%d %H:%M} UTC"
                  + (f", superseding {superseded}" if superseded else ""),
                  request=request)
     db.commit()
@@ -459,12 +482,42 @@ async def get_claim_link(
         return None
     return ClaimLinkStatus(
         state=claim_links.state(link),
+        bound_to=link.user.username if link.user else None,
         issued_by=link.issued_by,
         issued_at=utc(link.issued_at),
         expires_at=utc(link.expires_at),
         used_at=utc(link.used_at),
         used_ip=link.used_ip,
     )
+
+
+@router.post("/{client_id}/claim-link/collect", response_model=ClaimLinkCollected,
+             summary="Collect Claim Link")
+async def collect_claim_link(
+    client_id: int,
+    request: Request,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """
+    The claim link waiting for the signed-in sysop, as a link they can open.
+
+    Only the link's hash is kept, so the one the admin was shown can't be
+    shown again: this replaces it with a new one, bound to the same account
+    and expiring at the same time, and returns that. 404 when no link is
+    waiting for this account -- a sysop can't rotate their BBS's secret this
+    way, only collect what the admin issued.
+    """
+    scope.require_client(client_id)
+    waiting = claim_links.ready_for(db, client_id, scope.user)
+    if waiting is None:
+        raise HTTPException(status_code=404, detail="No claim link is waiting for you")
+    token, link, _ = claim_links.issue(db, waiting.client, waiting.issued_by or "",
+                                       user=scope.user, commit=False)
+    link.expires_at = waiting.expires_at
+    db.commit()
+    return ClaimLinkCollected(url=f"{public_url(request)}/claim/{token}",
+                              expires_at=utc(link.expires_at))
 
 
 @router.post("/{client_id}/regenerate-secret", response_model=ClientSecretResponse, summary="Regenerate Secret")

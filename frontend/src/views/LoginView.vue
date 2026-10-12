@@ -152,7 +152,8 @@ async function handleLogin() {
 
             <p class="login-footer text-muted">
                 Nova Hub v{{ appVersion }} ·
-                <router-link to="/how-it-works">How it works</router-link>
+                <router-link to="/how-it-works">How it works</router-link> ·
+                <router-link to="/join">Apply to join</router-link>
             </p>
         </div>
     </div>

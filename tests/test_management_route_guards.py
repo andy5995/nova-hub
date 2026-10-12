@@ -23,6 +23,11 @@ SELF = {
     ("GET", "/auth/me"),
     ("POST", "/auth/change-password"),
     ("GET", "/system/version"),
+    # Applying comes before running anything here, so before any scope.
+    ("GET", "/applications/leagues"),
+    ("GET", "/applications/mine"),
+    ("POST", "/applications"),
+    ("POST", "/applications/{application_id}/withdraw"),
 }
 
 # No session at all: signing in, and claim and re-link links (the link is the credential).

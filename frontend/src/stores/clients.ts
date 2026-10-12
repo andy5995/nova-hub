@@ -35,6 +35,11 @@ export interface ClientDetail {
   league_memberships: LeagueMembershipInfo[]
   ftn_addresses: FtnAddressInfo[]
   owners?: OwnerInfo[]
+  // Onboarding's Verify step
+  stage?: 'approved' | 'claimed' | 'first_token' | 'first_upload' | 'active'
+  first_token_at?: string | null
+  first_upload_at?: string | null
+  claim_waiting?: boolean // a claim link bound to the viewer is waiting
 }
 
 // An FTN address this BBS holds, and the leagues whose membership uses it.

@@ -56,10 +56,13 @@ const navigation = computed(() =>
     { name: 'Movements', path: '/movements', icon: 'movements', adminOnly: true },
     { name: 'Attacks & Traffic', path: '/attacks', icon: 'transit', adminOnly: true },
     { name: 'Alerts', path: '/alerts', icon: 'alerts' },
-  ].filter((item) => authStore.isAdmin || !item.adminOnly)
+    // Applying happens on the public /join page; this is the way back to it.
+    { name: 'Apply to Join', path: '/join', icon: 'join', sysopOnly: true },
+  ].filter((item) => (authStore.isAdmin ? !item.sysopOnly : !item.adminOnly))
 )
 
 const adminNavigation = computed(() => [
+  { name: 'Applications', path: '/admin/applications', icon: 'applications' },
   { name: 'Users', path: '/admin/users', icon: 'users' },
   { name: 'Audit Log', path: '/admin/audit', icon: 'log' },
 ])

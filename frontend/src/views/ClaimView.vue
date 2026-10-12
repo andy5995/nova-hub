@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { claimApi } from '@/services/api'
+import { authApi, claimApi } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 import { GAMES } from '@/games'
 import { useCopy } from '@/clipboard'
 
@@ -12,6 +13,8 @@ import { useCopy } from '@/clipboard'
 interface ClaimStatus {
   bbs_name: string
   state: 'ready' | 'used' | 'superseded' | 'expired'
+  requires_sign_in: boolean
+  signed_in_as_owner: boolean
   expires_at: string
   used_at?: string | null
   used_ip?: string | null
@@ -30,7 +33,11 @@ interface ClaimResult {
 const CLIENT_REPO = 'https://github.com/lime-red/nova-client'
 
 const route = useRoute()
+const authStore = useAuthStore()
 const token = computed(() => String(route.params.token))
+const signInUrl = computed(() => authApi.ssoStartUrl(`/claim/${token.value}`))
+// A bound link that the person looking can't claim as they are
+const needsSignIn = computed(() => !!status.value?.requires_sign_in && !status.value.signed_in_as_owner)
 
 const loading = ref(true)
 const notFound = ref(false)
@@ -210,7 +217,17 @@ python daemon.py --verbose</pre>
             syncing until you give it the new one.
           </p>
           <div v-if="error" class="alert alert-danger">{{ error }}</div>
-          <button class="btn btn-primary" :disabled="claiming" @click="handleClaim">
+          <template v-if="needsSignIn">
+            <p v-if="authStore.isAuthenticated" class="alert alert-warning">
+              This link was issued to a different hub account from the one you're signed in as
+              ({{ authStore.username }}). Sign out, then sign in as the account you applied with.
+            </p>
+            <template v-else>
+              <p>This link is for your hub account: sign in with it to claim.</p>
+              <a class="btn btn-primary" :href="signInUrl">Sign in to claim</a>
+            </template>
+          </template>
+          <button v-else class="btn btn-primary" :disabled="claiming" @click="handleClaim">
             {{ claiming ? 'Claiming...' : 'Claim credentials' }}
           </button>
           <p class="text-muted how-it-works">

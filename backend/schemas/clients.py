@@ -179,6 +179,12 @@ class ClientDetailResponse(BaseModel):
     league_memberships: List[LeagueMembershipInfo] = []
     ftn_addresses: List[FtnAddressInfo] = []
     owners: List[OwnerInfo] = []
+    # Onboarding's Verify step: approved, claimed, first_token, first_upload or active
+    stage: str = "approved"
+    first_token_at: Optional[datetime] = None
+    first_upload_at: Optional[datetime] = None
+    # A claim link bound to the viewer is waiting for them to collect
+    claim_waiting: bool = False
 
     class Config:
         from_attributes = True

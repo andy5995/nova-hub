@@ -1,7 +1,9 @@
-"""Claim links, the sysop's side: public, no session.
+"""Claim links, the sysop's side: public, no session needed to look.
 
-Possession of the link is the credential (see backend/services/claim_links.py),
-so these endpoints take no login. An unknown token counts as a failed attempt
+For an unbound link, possession is the credential (see
+backend/services/claim_links.py), so these endpoints take no login. A bound
+link also needs its account signed in to claim: the session is read if there
+is one, never required to look. An unknown token counts as a failed attempt
 toward the per-IP lockout the login endpoints use, which is what stops anyone
 guessing at them.
 
@@ -17,8 +19,9 @@ from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
 from backend.core.rate_limiter import _get_client_ip, check_rate_limit, record_failed_attempt
+from backend.core.security import get_current_user_optional
 from backend.logging_config import get_logger
-from backend.models.database import ClaimLink, Client
+from backend.models.database import ClaimLink, Client, SysopUser
 from backend.schemas.claim import ClaimedLeague, ClaimPageStatus, ClaimResult
 from backend.services import audit, claim_links
 
@@ -57,17 +60,26 @@ def _link_or_404(request: Request, db: Session, token: str) -> ClaimLink:
 
 
 @router.get("/{token}", response_model=ClaimPageStatus, summary="Claim Link Status")
-async def claim_status(request: Request, token: str = TOKEN, db: Session = Depends(get_db)):
+async def claim_status(
+    request: Request,
+    token: str = TOKEN,
+    db: Session = Depends(get_db),
+    viewer: Optional[SysopUser] = Depends(get_current_user_optional),
+):
     """
     What a claim link is for and whether it can still be used. Changes nothing.
 
     **Returns:** the BBS's name, the link's state (`ready`, `used`, `superseded`
-    or `expired`), its expiry, and when and from where it was used if it was.
+    or `expired`), whether claiming needs a sign-in and whether the viewer is
+    the right account, its expiry, and when and from where it was used if it was.
     """
     link = _link_or_404(request, db, token)
     return ClaimPageStatus(
         bbs_name=link.client.bbs_name,
         state=claim_links.state(link),
+        requires_sign_in=link.user_id is not None,
+        signed_in_as_owner=link.user_id is not None and viewer is not None
+        and viewer.id == link.user_id,
         expires_at=utc(link.expires_at),
         used_at=utc(link.used_at),
         used_ip=link.used_ip,
@@ -75,16 +87,33 @@ async def claim_status(request: Request, token: str = TOKEN, db: Session = Depen
 
 
 @router.post("/{token}", response_model=ClaimResult, summary="Claim Credentials")
-async def claim(request: Request, token: str = TOKEN, db: Session = Depends(get_db)):
+async def claim(
+    request: Request,
+    token: str = TOKEN,
+    db: Session = Depends(get_db),
+    viewer: Optional[SysopUser] = Depends(get_current_user_optional),
+):
     """
     Use a claim link: generate the BBS's client secret and return it, once.
 
     The new secret replaces the BBS's previous one immediately. Returns the
     credentials together with ready-made client config files (Linux
     `config.toml`, Windows `config.psd1`) listing the BBS's leagues. 409 if
-    the link has been used, superseded or has expired.
+    the link has been used, superseded or has expired. A bound link needs its
+    account signed in: 401 when no one is, 403 when someone else is.
     """
     link = _link_or_404(request, db, token)
+    if link.user_id is not None:
+        if viewer is None:
+            raise HTTPException(status_code=401,
+                                detail="Sign in to claim these credentials.")
+        if viewer.id != link.user_id:
+            record_failed_attempt(request)
+            raise HTTPException(
+                status_code=403,
+                detail="This link was issued to a different hub account. Sign in as that "
+                       "account, or ask the hub admin.",
+            )
     ip = _get_client_ip(request)
     try:
         secret = claim_links.claim(db, link, ip)

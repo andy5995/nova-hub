@@ -17,9 +17,11 @@ Issuing a new link supersedes any outstanding one for the same BBS.
 Opening the link (GET) only reports its state. Claiming is a separate POST, so
 the preview fetch a chat app makes when the link is pasted cannot use it up.
 
-These are the "unbound" links of the onboarding design: with no sysop accounts
-yet, possession of the link is the credential. Once sysops sign in, a link will
-also require a session as the owning sysop.
+A link may be bound to an account. Then only that account, signed in, can
+claim it, so a link that is forwarded or read over someone's shoulder is
+useless to anyone else. Approving an application issues one bound to the
+applicant. An unbound link -- possession is the credential -- is for a BBS
+whose sysop has no account.
 """
 
 import hashlib
@@ -31,7 +33,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from backend.core.security import get_password_hash
-from backend.models.database import ClaimLink, Client, LeagueMembership
+from backend.models.database import ClaimLink, Client, LeagueMembership, SysopUser
 from backend.services.games import game_for_letter
 
 LINK_TTL = timedelta(hours=72)
@@ -55,10 +57,12 @@ def state(link: ClaimLink, now: datetime | None = None) -> str:
     return READY
 
 
-def issue(db: Session, client: Client, issued_by: str) -> tuple[str, ClaimLink, int]:
-    """A new link for this BBS. Returns (token, link, how many it superseded).
+def issue(db: Session, client: Client, issued_by: str, user: SysopUser | None = None,
+          commit: bool = True) -> tuple[str, ClaimLink, int]:
+    """A new link for this BBS, bound to `user` if given.
 
-    The token is returned once, here; only its hash is kept. Commits.
+    Returns (token, link, how many it superseded). The token is returned once,
+    here; only its hash is kept. Commits unless told not to.
     """
     now = datetime.utcnow()
     superseded = db.execute(
@@ -79,11 +83,32 @@ def issue(db: Session, client: Client, issued_by: str) -> tuple[str, ClaimLink, 
         issued_by=issued_by,
         issued_at=now,
         expires_at=now + LINK_TTL,
+        user_id=user.id if user else None,
     )
     db.add(link)
-    db.commit()
-    db.refresh(link)
+    if commit:
+        db.commit()
+        db.refresh(link)
+    else:
+        db.flush()
     return token, link, superseded
+
+
+def ready_for(db: Session, client_id: int, user: SysopUser) -> ClaimLink | None:
+    """A link for this BBS that is bound to this user and still claimable."""
+    now = datetime.utcnow()
+    return (
+        db.query(ClaimLink)
+        .filter(
+            ClaimLink.client_id == client_id,
+            ClaimLink.user_id == user.id,
+            ClaimLink.used_at.is_(None),
+            ClaimLink.superseded_at.is_(None),
+            ClaimLink.expires_at > now,
+        )
+        .order_by(ClaimLink.issued_at.desc())
+        .first()
+    )
 
 
 def find(db: Session, token: str) -> ClaimLink | None:

@@ -18,6 +18,7 @@ from .auth import router as auth_router
 from .claim import router as claim_router
 from .relink import router as relink_router
 from .dashboard import router as dashboard_router
+from .applications import router as applications_router
 from .clients import router as clients_router
 from .leagues import router as leagues_router
 from .movements import router as movements_router
@@ -106,6 +107,12 @@ management_router.include_router(
     alerts_router,
     prefix="/alerts",
     tags=["Management API - Alerts"]
+)
+
+management_router.include_router(
+    applications_router,
+    prefix="/applications",
+    tags=["Management API - Applications"]
 )
 
 management_router.include_router(

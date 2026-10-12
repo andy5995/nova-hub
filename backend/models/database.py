@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     LargeBinary,
     String,
     Text,
@@ -84,6 +85,10 @@ class Client(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, nullable=True)
+    # The Verify step of onboarding: when the node first signed in with its
+    # credentials, and first uploaded a packet. Set once, never moved.
+    first_token_at = Column(DateTime, nullable=True)
+    first_upload_at = Column(DateTime, nullable=True)
 
     # Relationships
     packets_uploaded = relationship(
@@ -207,8 +212,14 @@ class ClaimLink(Base):
     used_at = Column(DateTime, nullable=True)
     used_ip = Column(String(45), nullable=True)
     superseded_at = Column(DateTime, nullable=True)
+    # Set: only this account, signed in, can claim it, so a forwarded link is
+    # useless to anyone else. None: an "unbound" link, which anyone holding it
+    # can claim -- for a BBS whose sysop has no account.
+    user_id = Column(Integer, ForeignKey("sysop_users.id", ondelete="SET NULL"), nullable=True,
+                     index=True)
 
     client = relationship("Client")
+    user = relationship("SysopUser")
 
 
 class RelinkLink(Base):
@@ -237,6 +248,53 @@ class RelinkLink(Base):
     superseded_at = Column(DateTime, nullable=True)
 
     user = relationship("SysopUser")
+
+
+class Application(Base):
+    """A sysop asking to join: a new BBS, or an existing BBS asking for more leagues.
+
+    The queue the admin approves from. A "join" carries the BBS's details as
+    the sysop gave them; approving it creates the BBS, makes the applicant its
+    owner, adds the granted memberships and issues a claim link bound to the
+    applicant. A "leagues" request names a BBS the applicant already owns and
+    needs no new credentials. Rows are kept after review: they are the record
+    of who asked for what and what was decided. See
+    backend/services/applications.py.
+    """
+
+    __tablename__ = "applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String(10), nullable=False)  # "join" or "leagues"
+    user_id = Column(Integer, ForeignKey("sysop_users.id", ondelete="SET NULL"), nullable=True,
+                     index=True)
+    applicant = Column(String(50), nullable=False)  # username, kept if the account goes
+    # The BBS a "leagues" request is for; for a "join", the one approval created.
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True,
+                       index=True)
+    status = Column(String(10), nullable=False, default="pending", index=True)
+
+    bbs_name = Column(String(100), nullable=False)
+    sysop_name = Column(String(100), nullable=True)
+    email = Column(String(100), nullable=True)
+    city = Column(String(50), nullable=True)
+    state = Column(String(50), nullable=True)
+    country = Column(String(50), nullable=True)
+    software = Column(String(100), nullable=True)
+    address = Column(String(200), nullable=True)  # telnet or web address
+    os = Column(String(10), nullable=True)  # "windows" or "linux"
+    league_ids = Column(JSON, nullable=False, default=list)  # leagues asked for
+    note = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    reviewed_by = Column(String(50), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    decision_note = Column(Text, nullable=True)
+    # What approval granted: [{"league_id", "bbs_index", "ftn_address"}, ...]
+    granted = Column(JSON, nullable=True)
+
+    user = relationship("SysopUser")
+    client = relationship("Client")
 
 
 class League(Base):

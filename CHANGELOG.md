@@ -4,6 +4,29 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Sysops apply to join; the admin approves.** A public `/join` page takes a
+  signed-in sysop's BBS details (name, location, software, address, OS) and
+  the leagues they want. The admin reviews the queue under Admin >
+  Applications, picking each league's BBS number and FTN address (suggested:
+  the BBS's number elsewhere, else the lowest free one). Approving creates the
+  BBS, makes the applicant its owner, adds the memberships, regenerates the
+  leagues' nodelists and issues a claim link bound to the applicant, all in
+  one transaction. Rejecting records a note the sysop sees. A sysop can
+  withdraw while it waits; one waiting application per account.
+- **More leagues from the console.** An owner asks for more leagues on their
+  BBS's page; approval adds the memberships, and the credentials don't change.
+- **Claim links bound to an account.** Only that account, signed in, can
+  claim one, so a forwarded link is useless to anyone else. Approval issues
+  them; the admin can also bind a link to one of a BBS's owners. The bound
+  sysop collects it from their BBS's page. Unbound links still work for a
+  sysop with no account.
+- **Verify progress** on each BBS's page: Approved, Credentials claimed,
+  First sign-in, First upload, Active (seen in the last two days), so a node
+  stuck at a step shows without asking. The hub now records each BBS's first
+  sign-in and first upload; the upgrade fills both in for BBSes already
+  running.
+
 ## [0.5.1] - 2026-10-12
 
 ### Added

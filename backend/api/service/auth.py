@@ -70,8 +70,10 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Update last_seen
+    # Update last_seen, and the onboarding Verify step's first sign-in
     client.last_seen = datetime.utcnow()
+    if client.first_token_at is None:
+        client.first_token_at = client.last_seen
     db.commit()
 
     # Create token

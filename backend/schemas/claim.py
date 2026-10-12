@@ -16,6 +16,7 @@ class ClaimLinkIssued(BaseModel):
 class ClaimLinkStatus(BaseModel):
     """The latest link issued for a BBS, as the admin sees it (never the token)"""
     state: str  # ready | used | superseded | expired
+    bound_to: Optional[str] = None  # the account that must be signed in to claim it
     issued_by: Optional[str] = None
     issued_at: datetime
     expires_at: datetime
@@ -27,9 +28,25 @@ class ClaimPageStatus(BaseModel):
     """What the claim page shows before anything is claimed"""
     bbs_name: str
     state: str  # ready | used | superseded | expired
+    # A bound link needs its account signed in. signed_in_as_owner says
+    # whether the person looking is that account, so the page can offer
+    # Claim, or Sign in instead. Never names the account.
+    requires_sign_in: bool = False
+    signed_in_as_owner: bool = False
     expires_at: datetime
     used_at: Optional[datetime] = None
     used_ip: Optional[str] = None
+
+
+class ClaimLinkRequest(BaseModel):
+    """Issuing a link: bind it to one of the BBS's owners, or leave it unbound"""
+    user_id: Optional[int] = None
+
+
+class ClaimLinkCollected(BaseModel):
+    """A sysop collecting the link waiting for them; the console opens it"""
+    url: str
+    expires_at: datetime
 
 
 class ClaimedLeague(BaseModel):

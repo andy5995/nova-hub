@@ -55,7 +55,8 @@ async function refresh() {
         class="alert alert-info"
       >
         Welcome, {{ authStore.username }}. Your account isn't linked to a BBS yet, so there is
-        nothing to show. Ask the hub admin to add you as your BBS's sysop.
+        nothing to show. New to the hub? <router-link to="/join">Apply to join</router-link> with your
+        BBS. If your BBS is already here, ask the hub admin to add you as its sysop.
       </div>
 
       <!-- Loading State -->

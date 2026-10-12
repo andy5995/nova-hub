@@ -4,7 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
-import { clientsApi, leaguesApi, usersApi } from '@/services/api'
+import {
+  applicationsApi,
+  clientsApi,
+  leaguesApi,
+  usersApi,
+  type Application,
+  type JoinableLeague,
+} from '@/services/api'
 import type { User } from '@/stores/auth'
 import { useCopy } from '@/clipboard'
 
@@ -44,6 +51,7 @@ const addressError = ref<string | null>(null)
 // The link itself is shown once, here, right after it is issued.
 interface ClaimLinkStatus {
   state: 'ready' | 'used' | 'superseded' | 'expired'
+  bound_to?: string | null
   issued_by?: string | null
   issued_at: string
   expires_at: string
@@ -64,10 +72,15 @@ async function loadClaimStatus() {
   }
 }
 
+// '' for an unbound link (a sysop with no account), else one of the owners
+const claimFor = ref<number | ''>('')
+
 async function handleIssueClaimLink() {
   claimError.value = null
   try {
-    issuedLink.value = (await clientsApi.issueClaimLink(clientId.value)).data
+    issuedLink.value = (
+      await clientsApi.issueClaimLink(clientId.value, claimFor.value === '' ? undefined : claimFor.value)
+    ).data
     await loadClaimStatus()
   } catch (e: any) {
     claimError.value = e.response?.data?.detail || 'Could not issue a claim link'
@@ -78,13 +91,109 @@ function claimStatusText(s: ClaimLinkStatus): string {
   const at = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '')
   switch (s.state) {
     case 'ready':
-      return `Waiting to be claimed; expires ${at(s.expires_at)}`
+      return `Waiting to be claimed${s.bound_to ? ` by ${s.bound_to}` : ''}; expires ${at(s.expires_at)}`
     case 'used':
       return `Claimed ${at(s.used_at)} from ${s.used_ip}`
     case 'superseded':
       return 'Replaced by a newer link'
     default:
       return `Expired ${at(s.expires_at)} without being claimed`
+  }
+}
+
+// A sysop collecting the credentials the admin approved for them. The
+// console can't show the link the admin saw (only its hash is kept), so this
+// swaps it for a fresh one bound to the same account, and opens it.
+const collecting = ref(false)
+async function handleCollect() {
+  collecting.value = true
+  claimError.value = null
+  try {
+    const url = (await clientsApi.collectClaimLink(clientId.value)).data.url
+    router.push(new URL(url).pathname)
+  } catch (e: any) {
+    claimError.value = e.response?.data?.detail || 'Could not collect the credentials'
+  } finally {
+    collecting.value = false
+  }
+}
+
+// Onboarding's Verify step: approved -> claimed -> first sign-in -> first upload -> active
+const STAGES = [
+  { key: 'approved', label: 'Approved' },
+  { key: 'claimed', label: 'Credentials claimed' },
+  { key: 'first_token', label: 'First sign-in' },
+  { key: 'first_upload', label: 'First upload' },
+  { key: 'active', label: 'Active' },
+] as const
+const stageIndex = computed(() =>
+  STAGES.findIndex((s) => s.key === (clientsStore.currentClient?.stage ?? 'approved'))
+)
+const STAGE_HINT: Record<string, string> = {
+  approved: 'Waiting for the sysop to claim the credentials.',
+  claimed: 'Credentials claimed; the client has not signed in yet.',
+  first_token: 'The client signs in but has not uploaded a packet yet. Usually game paths.',
+  first_upload: 'Has exchanged packets, but has not been seen in the last two days.',
+}
+
+// A sysop asking for more leagues for this BBS. The admin approves it, like a join.
+const myRequests = ref<Application[]>([])
+const openLeagues = ref<JoinableLeague[]>([])
+const requestLeagueIds = ref<number[]>([])
+const requestNote = ref('')
+const requestError = ref<string | null>(null)
+const pendingRequest = computed(() =>
+  myRequests.value.find((a) => a.kind === 'leagues' && a.client_id === clientId.value && a.status === 'pending')
+)
+const lastDecided = computed(() =>
+  myRequests.value.find((a) => a.kind === 'leagues' && a.client_id === clientId.value && a.status !== 'pending')
+)
+const requestableLeagues = computed(() => {
+  const member = new Set(
+    (clientsStore.currentClient?.league_memberships ?? []).map((m) => m.league_id)
+  )
+  return openLeagues.value.filter((l) => !member.has(l.id))
+})
+
+async function loadRequests() {
+  if (authStore.isAdmin) return
+  try {
+    const [mine, open] = await Promise.all([applicationsApi.mine(), applicationsApi.leagues()])
+    myRequests.value = mine.data
+    openLeagues.value = open.data
+  } catch {
+    myRequests.value = []
+  }
+}
+
+async function handleRequestLeagues() {
+  requestError.value = null
+  if (!requestLeagueIds.value.length) {
+    requestError.value = 'Choose at least one league.'
+    return
+  }
+  try {
+    await applicationsApi.apply({
+      kind: 'leagues',
+      client_id: clientId.value,
+      league_ids: requestLeagueIds.value,
+      note: requestNote.value.trim() || undefined,
+    })
+    requestLeagueIds.value = []
+    requestNote.value = ''
+    await loadRequests()
+  } catch (e: any) {
+    requestError.value = e.response?.data?.detail || 'Could not send the request'
+  }
+}
+
+async function handleWithdrawRequest(application: Application) {
+  requestError.value = null
+  try {
+    await applicationsApi.withdraw(application.id)
+    await loadRequests()
+  } catch (e: any) {
+    requestError.value = e.response?.data?.detail || 'Could not withdraw it'
   }
 }
 
@@ -131,7 +240,7 @@ async function handleRemoveOwner(userId: number) {
 
 onMounted(async () => {
   await clientsStore.loadClient(clientId.value)
-  await Promise.all([loadClaimStatus(), loadUsers()])
+  await Promise.all([loadClaimStatus(), loadUsers(), loadRequests()])
 })
 
 function openEditModal() {
@@ -267,6 +376,30 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
           </div>
         </header>
 
+        <div v-if="clientsStore.currentClient.claim_waiting" class="alert alert-info collect">
+          <span>
+            <strong>Your credentials are ready.</strong> Collect them once, with a config file for your
+            client already filled in.
+          </span>
+          <button class="btn btn-primary btn-sm" :disabled="collecting" @click="handleCollect">
+            {{ collecting ? 'Opening...' : 'Collect credentials' }}
+          </button>
+        </div>
+        <div v-if="claimError && !authStore.isAdmin" class="alert alert-danger">{{ claimError }}</div>
+
+        <div v-if="clientsStore.currentClient.stage && clientsStore.currentClient.stage !== 'active'" class="card mb-4">
+          <div class="card-body">
+            <ol class="stages">
+              <li
+                v-for="(s, i) in STAGES"
+                :key="s.key"
+                :class="{ done: i < stageIndex, current: i === stageIndex }"
+              >{{ s.label }}</li>
+            </ol>
+            <p class="form-hint mt-2">{{ STAGE_HINT[clientsStore.currentClient.stage] }}</p>
+          </div>
+        </div>
+
         <div class="content-grid">
           <!-- Info Card -->
           <div class="card">
@@ -301,6 +434,12 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
               </dl>
 
               <div v-if="authStore.isAdmin" class="credential-actions mt-4">
+                <select v-if="clientsStore.currentClient.owners?.length" v-model="claimFor" class="claim-for">
+                  <option value="">For anyone with the link</option>
+                  <option v-for="o in clientsStore.currentClient.owners" :key="o.user_id" :value="o.user_id">
+                    Only for {{ o.username }}, signed in
+                  </option>
+                </select>
                 <button class="btn btn-primary btn-sm" @click="handleIssueClaimLink">
                   Issue Claim Link
                 </button>
@@ -343,6 +482,42 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- A sysop asking for more leagues -->
+        <div v-if="!authStore.isAdmin" class="card mt-4">
+          <div class="card-header">
+            <h3>More leagues</h3>
+          </div>
+          <div class="card-body">
+            <div v-if="requestError" class="alert alert-error mb-4">{{ requestError }}</div>
+            <template v-if="pendingRequest">
+              <p>
+                Asked for {{ pendingRequest.leagues.map((l) => l.full_id).join(', ') }}
+                on {{ new Date(pendingRequest.created_at).toLocaleDateString() }}; waiting for the hub admin.
+              </p>
+              <button class="btn btn-secondary btn-sm" @click="handleWithdrawRequest(pendingRequest)">Withdraw</button>
+            </template>
+            <template v-else>
+              <p v-if="lastDecided" class="form-hint mb-4">
+                Your last request was {{ lastDecided.status }}<template v-if="lastDecided.decision_note">:
+                {{ lastDecided.decision_note }}</template>
+              </p>
+              <p v-if="!requestableLeagues.length" class="text-muted">No other leagues are open to join.</p>
+              <form v-else @submit.prevent="handleRequestLeagues">
+                <label v-for="l in requestableLeagues" :key="l.id" class="league-choice">
+                  <input v-model="requestLeagueIds" type="checkbox" :value="l.id" />
+                  <span class="font-mono">{{ l.full_id }}</span> {{ l.name }}
+                </label>
+                <textarea v-model="requestNote" rows="2" maxlength="2000" placeholder="Anything the admin should know (optional)" class="mt-2"></textarea>
+                <button type="submit" class="btn btn-primary btn-sm mt-2">Ask to join</button>
+              </form>
+              <p class="form-hint mt-2">
+                Your credentials stay the same. Once approved, add the league to your client's config with
+                the BBS number shown above.
+              </p>
+            </template>
           </div>
         </div>
 
@@ -933,6 +1108,57 @@ table .actions {
   gap: 0.75rem;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--color-border);
+}
+
+.collect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  counter-reset: stage;
+}
+
+.stages li {
+  counter-increment: stage;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  background: var(--color-background, #f1f5f9);
+  color: var(--color-text-muted, #64748b);
+}
+
+.stages li::before {
+  content: counter(stage) '. ';
+}
+
+.stages li.done {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.stages li.current {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.claim-for {
+  font-size: 0.8125rem;
+}
+
+.league-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
 }
 
 .owner-list {

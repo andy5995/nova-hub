@@ -178,6 +178,9 @@ async def upload_packet(
         checksum=file_hash,
     )
     db.add(packet)
+    if client.first_upload_at is None:
+        # The onboarding Verify step: this node is really exchanging packets
+        client.first_upload_at = datetime.utcnow()
     db.commit()
 
     # Best-effort: an attack that cannot be traced must not fail the upload.

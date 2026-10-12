@@ -32,6 +32,13 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      // A sysop applying with a new BBS. Public; applying itself needs a sign-in.
+      path: '/join',
+      name: 'join',
+      component: () => import('@/views/JoinView.vue'),
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/',
       redirect: '/dashboard'
     },
@@ -109,6 +116,12 @@ const router = createRouter({
       path: '/admin/users',
       name: 'admin-users',
       component: () => import('@/views/AdminUsersView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/admin/applications',
+      name: 'admin-applications',
+      component: () => import('@/views/ApplicationsView.vue'),
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {

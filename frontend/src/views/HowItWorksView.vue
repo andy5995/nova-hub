@@ -92,15 +92,18 @@ const EQUIVALENTS = [
           Download the client
         </a>
         <span class="download-url font-mono">{{ CLIENT_REPO }}</span>
-        <p class="text-muted">This is the only thing you install.</p>
+        <p class="text-muted">
+          This is the only thing you install. Ready? <router-link to="/join">Apply to join</router-link>.
+        </p>
       </section>
 
       <section>
         <h3>First run</h3>
         <p>
-          The hub admin sends you a claim link. It gives you your client ID and secret and a config file
-          with your hub address, leagues and BBS numbers already filled in; you add the paths to your
-          game installs. Then:
+          <router-link to="/join">Apply to join</router-link> with your BBS's details and the leagues
+          you want. Once the hub admin approves, sign in and collect your credentials: your client ID
+          and secret, and a config file with your hub address, leagues and BBS numbers already filled
+          in. You add the paths to your game installs. Then:
         </p>
         <ol class="steps">
           <li>
@@ -150,7 +153,7 @@ const EQUIVALENTS = [
       <section>
         <h3>Getting help</h3>
         <p>
-          Ask the hub admin, the person who sent you your claim link. Include the validator's output
+          Ask the hub admin. Include the validator's output
           and the client log from the run that went wrong; with <code>--verbose</code> (or
           <code>-Verbose</code>) the log says which league, packet and request failed.
         </p>

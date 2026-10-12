@@ -123,8 +123,13 @@ export const clientsApi = {
   deleteFtnAddress: (id: number, addressId: number) =>
     api.delete(`/clients/${id}/ftn-addresses/${addressId}`),
 
-  issueClaimLink: (id: number) =>
-    api.post(`/clients/${id}/claim-link`),
+  // userId binds the link to one of the BBS's owners; without it, unbound
+  issueClaimLink: (id: number, userId?: number) =>
+    api.post(`/clients/${id}/claim-link`, userId ? { user_id: userId } : undefined),
+
+  // A sysop collecting the link the admin issued them: returns a fresh { url }
+  collectClaimLink: (id: number) =>
+    api.post(`/clients/${id}/claim-link/collect`),
 
   getClaimLink: (id: number) =>
     api.get(`/clients/${id}/claim-link`),
@@ -134,6 +139,88 @@ export const clientsApi = {
 
   removeOwner: (id: number, userId: number) =>
     api.delete(`/clients/${id}/owners/${userId}`)
+}
+
+// Sysops apply to join, or for more leagues; the admin decides.
+export interface JoinableLeague {
+  id: number
+  full_id: string
+  name: string
+  game: string
+}
+
+export interface Application {
+  id: number
+  kind: 'join' | 'leagues'
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  applicant: string
+  email: string | null
+  client_id: number | null
+  bbs_name: string
+  sysop_name: string | null
+  city: string | null
+  state: string | null
+  country: string | null
+  software: string | null
+  address: string | null
+  os: string | null
+  leagues: JoinableLeague[]
+  note: string | null
+  created_at: string
+  reviewed_by: string | null
+  reviewed_at: string | null
+  decision_note: string | null
+  granted: { league_id: number; league: string; bbs_index: number; ftn_address: string | null }[]
+}
+
+export interface LeagueSuggestion {
+  league_id: number
+  full_id: string
+  name: string
+  hub_address: string | null
+  bbs_index: number
+  ftn_address: string | null
+  taken: { bbs_index: number; bbs_name: string; ftn_address: string | null }[]
+}
+
+export interface ApplicationReview {
+  application: Application
+  client_id_suggestion: string | null
+  client_addresses: string[]
+  leagues: LeagueSuggestion[]
+}
+
+export interface JoinRequest {
+  kind: 'join'
+  bbs_name: string
+  sysop_name?: string
+  city?: string
+  state?: string
+  country?: string
+  software?: string
+  address?: string
+  os?: 'windows' | 'linux' | null
+  league_ids: number[]
+  note?: string
+}
+
+export const applicationsApi = {
+  leagues: () => api.get<JoinableLeague[]>('/applications/leagues'),
+  mine: () => api.get<Application[]>('/applications/mine'),
+  apply: (body: JoinRequest | { kind: 'leagues'; client_id: number; league_ids: number[]; note?: string }) =>
+    api.post<Application>('/applications', body),
+  withdraw: (id: number) => api.post<Application>(`/applications/${id}/withdraw`),
+
+  // Admin
+  list: (status = 'pending') => api.get<Application[]>('/applications', { params: { status } }),
+  review: (id: number) => api.get<ApplicationReview>(`/applications/${id}`),
+  approve: (id: number, body: {
+    grants: { league_id: number; bbs_index: number; ftn_address: string }[]
+    client_id?: string
+    bbs_name?: string
+    note?: string
+  }) => api.post(`/applications/${id}/approve`, body),
+  reject: (id: number, note: string) => api.post<Application>(`/applications/${id}/reject`, { note })
 }
 
 // Every BBS against every league: index and address in each

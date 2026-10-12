@@ -21,6 +21,7 @@ const PAGE = 100
 
 const ACTIONS = [
   { value: '', label: 'Everything' },
+  { value: 'application.', label: 'Applications' },
   { value: 'account.', label: 'Accounts and sign-ins' },
   { value: 'owner.', label: 'BBS owners' },
   { value: 'claim_link.', label: 'Claim links' },
@@ -58,6 +59,7 @@ onMounted(() => load())
 function targetLink(e: AuditEvent): string | null {
   if (e.target_type === 'client' && e.target_id) return `/clients/${e.target_id}`
   if (e.target_type === 'league' && e.target_id) return `/leagues/${e.target_id}`
+  if (e.target_type === 'application' && e.target_id) return `/admin/applications?id=${e.target_id}`
   return null
 }
 </script>
