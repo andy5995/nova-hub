@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-12
+
 ### Added
 - **Claim links** replace sending a client secret over chat. An admin issues
   one from the BBS's page; the sysop opens it and presses Claim, and the hub
@@ -82,6 +84,8 @@ All notable changes to Nova Hub will be documented in this file.
   `<public_url>/management/api/v1/auth/sso/callback` as a redirect URI with
   the provider. Then connect the admin account's own sign-in with a link from
   the Users page.
+- Reinstall the requirements (`pip install -r requirements.txt`): `httpx` is
+  now needed at runtime, for provider sign-in, and `aiohttp` moves to 3.14.3.
 
 ## [0.4.0] - 2026-09-17
 
