@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
-"""
-Export FastAPI OpenAPI spec as Markdown documentation
+"""Write the hub's API docs: an OpenAPI spec and a Markdown page per API.
 
-This script generates API documentation in Markdown format from the
-FastAPI OpenAPI schema and saves it to docs/API.md
+    .venv/bin/python export_api_docs.py            # rewrite docs/
+    .venv/bin/python export_api_docs.py --check    # exit 1 if docs/ is stale
+
+docs/service-api.{json,md}     the contract with every client (OAuth2)
+docs/management-api.{json,md}  the console's own API (session cookie)
+
+Kept apart because they change on different terms: the Service API only on
+purpose, with nova-client in step; the Management API whenever the console
+needs it. Each spec is what that API serves at <mount>/openapi.json, keys
+sorted. tests/test_api_docs.py fails while docs/ is stale, so regenerate in
+the same commit as any API change -- a release's version bump included.
 """
 
-import json
+import argparse
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -78,6 +87,10 @@ def generate_markdown(openapi_spec: Dict[str, Any]) -> str:
 
     lines = []
 
+    # Paths are written whole, mount included, so the page needs no Servers section.
+    servers = openapi_spec.get("servers") or [{}]
+    prefix = servers[0].get("url", "")
+
     # Title and Description
     info = openapi_spec.get("info", {})
     lines.append(f"# {info.get('title', 'API Documentation')}\n")
@@ -103,17 +116,6 @@ def generate_markdown(openapi_spec: Dict[str, Any]) -> str:
         lines.append(f"**License:** {license_info.get('name', 'N/A')}\n")
 
     lines.append("---\n")
-
-    # Servers
-    if "servers" in openapi_spec:
-        lines.append("## Servers\n")
-        for server in openapi_spec["servers"]:
-            url = server.get("url", "")
-            description = server.get("description", "")
-            lines.append(f"- **{url}**")
-            if description:
-                lines.append(f"  - {description}")
-        lines.append("")
 
     # Table of Contents
     lines.append("## Table of Contents\n")
@@ -144,7 +146,7 @@ def generate_markdown(openapi_spec: Dict[str, Any]) -> str:
 
         for method, path, summary, operation in tags_dict[tag]:
             # Endpoint header
-            lines.append(f"### {method} `{path}`\n")
+            lines.append(f"### {method} `{prefix}{path}`\n")
             lines.append(f"**{summary}**\n")
 
             # Description
@@ -202,92 +204,45 @@ def generate_markdown(openapi_spec: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def merge_mounted_specs(root_app, mounts: List[tuple]) -> Dict[str, Any]:
-    """Build one OpenAPI spec covering the root app and its mounted sub-apps.
-
-    The Service and Management APIs are separate FastAPI applications mounted
-    under /service and /management. ``root_app.openapi()`` does not see through
-    a mount, so generating from the root app alone produced documentation whose
-    every path was missing its mount prefix - which is how docs/API.md came to
-    advertise ``POST /auth/token`` for an endpoint that only ever existed at
-    ``POST /service/api/v1/auth/token``.
-
-    Each sub-app's paths are rewritten with its mount prefix, and component
-    schemas are merged. Schema names collide harmlessly: both sub-apps are
-    generated from the same Pydantic models.
-    """
-    spec = root_app.openapi()
-    spec.setdefault("paths", {})
-    spec.setdefault("components", {}).setdefault("schemas", {})
-
-    descriptions = [spec.get("info", {}).get("description", "")]
-
-    for prefix, sub_app in mounts:
-        sub_spec = sub_app.openapi()
-
-        # generate_markdown only renders info.description from the top-level
-        # spec, so fold each sub-app's own overview in - that is where the
-        # authentication and packet-naming notes live.
-        sub_info = sub_spec.get("info", {})
-        if sub_info.get("description"):
-            descriptions.append(
-                f"\n---\n\n# {sub_info.get('title', prefix)} "
-                f"(mounted at `{prefix}`)\n\n{sub_info['description']}"
-            )
-
-        for path, methods in sub_spec.get("paths", {}).items():
-            spec["paths"][f"{prefix}{path}"] = methods
-
-        for name, schema in sub_spec.get("components", {}).get("schemas", {}).items():
-            spec["components"]["schemas"].setdefault(name, schema)
-
-        sub_security = sub_spec.get("components", {}).get("securitySchemes")
-        if sub_security:
-            spec["components"].setdefault("securitySchemes", {}).update(sub_security)
-
-    spec.setdefault("info", {})["description"] = "\n".join(descriptions)
-    return spec
+DOCS = Path(__file__).resolve().parent / "docs"
 
 
-def main():
-    """Main function to export API docs"""
-    print("Generating API documentation...")
+def rendered() -> Dict[Path, str]:
+    """Every file under docs/ this script owns, and what it should contain."""
+    from export_openapi import dumps, management_spec, service_spec
 
-    # Import the FastAPI app
-    try:
-        from main import app, management_app, service_app
-    except ImportError as e:
-        print(f"Error: Could not import FastAPI app: {e}")
-        print("Make sure you're running this script from the nova-hub directory")
-        return 1
+    files = {}
+    for name, spec in (("service-api", service_spec()), ("management-api", management_spec())):
+        files[DOCS / f"{name}.json"] = dumps(spec)
+        files[DOCS / f"{name}.md"] = generate_markdown(spec).rstrip("\n") + "\n"
+    return files
 
-    # Get OpenAPI spec, including the mounted sub-applications
-    openapi_spec = merge_mounted_specs(
-        app,
-        [("/service", service_app), ("/management", management_app)],
-    )
 
-    # Generate markdown
-    markdown_content = generate_markdown(openapi_spec)
+def stale() -> List[Path]:
+    return [path for path, text in rendered().items()
+            if not path.exists() or path.read_text() != text]
 
-    # Save to docs folder
-    docs_dir = Path("docs")
-    docs_dir.mkdir(exist_ok=True)
 
-    output_file = docs_dir / "API.md"
-    output_file.write_text(markdown_content)
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--check", action="store_true",
+                        help="change nothing; exit 1 if any file is out of date")
+    args = parser.parse_args()
 
-    print(f"✓ API documentation exported to: {output_file}")
-    print(f"  - {len(openapi_spec.get('paths', {}))} endpoints documented")
-    print(f"  - {len(markdown_content.splitlines())} lines generated")
+    if args.check:
+        out_of_date = stale()
+        for path in out_of_date:
+            print(f"stale: {path.relative_to(DOCS.parent)}", file=sys.stderr)
+        if out_of_date:
+            print("Run .venv/bin/python export_api_docs.py and commit docs/.", file=sys.stderr)
+        return 1 if out_of_date else 0
 
-    # Also save raw OpenAPI JSON for reference
-    json_file = docs_dir / "openapi.json"
-    json_file.write_text(json.dumps(openapi_spec, indent=2))
-    print(f"✓ OpenAPI JSON exported to: {json_file}")
-
+    DOCS.mkdir(exist_ok=True)
+    for path, text in rendered().items():
+        path.write_text(text)
+        print(f"Wrote {path.relative_to(DOCS.parent)}")
     return 0
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

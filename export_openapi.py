@@ -14,19 +14,36 @@ against it.
 """
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
 
 
+def mounted_spec(sub_app, prefix: str) -> dict:
+    """A mounted sub-app's spec, as it serves it at <prefix>/openapi.json."""
+    spec = copy.deepcopy(sub_app.openapi())  # openapi() caches; leave the app's alone
+    # Mounted at the prefix; the served copy gets this from the request's
+    # root_path, which an offline export has no request to supply.
+    spec["servers"] = [{"url": prefix}]
+    return spec
+
+
 def service_spec() -> dict:
     from main import service_app
 
-    spec = service_app.openapi()
-    # Mounted at /service; the served copy gets this from the request's
-    # root_path, which an offline export has no request to supply.
-    spec["servers"] = [{"url": "/service"}]
-    return spec
+    return mounted_spec(service_app, "/service")
+
+
+def management_spec() -> dict:
+    from main import management_app
+
+    return mounted_spec(management_app, "/management")
+
+
+def dumps(spec: dict) -> str:
+    # Sorted, so a diff of the file is a diff of the API and nothing else.
+    return json.dumps(spec, indent=2, sort_keys=True) + "\n"
 
 
 def main() -> int:
@@ -34,7 +51,7 @@ def main() -> int:
     parser.add_argument("output", nargs="?", help="file to write (default: stdout)")
     args = parser.parse_args()
 
-    text = json.dumps(service_spec(), indent=2, sort_keys=True) + "\n"
+    text = dumps(service_spec())
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(text)

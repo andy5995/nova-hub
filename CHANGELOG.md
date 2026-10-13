@@ -13,6 +13,14 @@ All notable changes to Nova Hub will be documented in this file.
   paths: the hub keeps only its hash. Downloading changes nothing.
 
 ### Changed
+- **API docs are split per API and kept current.** `docs/API.md` and
+  `docs/openapi.json` mixed both APIs in one file with one shared schema
+  list, and had not been regenerated since 0.5.0. `export_api_docs.py` now
+  writes `docs/service-api.{json,md}` and `docs/management-api.{json,md}`,
+  each spec exactly what that API serves at its `openapi.json`, keys sorted
+  (the service spec is the one `export_openapi.py` gives nova-client).
+  `tests/test_api_docs.py` fails while they are stale, so regenerate them in
+  the commit that changes an API, a release's version bump included.
 - **The live rig drives the games through sr-harness.** The rig's pty runner,
   screen driver, 8.3 guard and BRE player walk were split out as the
   standalone `lime/sr-harness` library (which also plays Falcon's Eye), and
