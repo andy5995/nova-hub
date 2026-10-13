@@ -4,6 +4,7 @@ import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -558,6 +559,43 @@ async def regenerate_secret(
         client_id=client.client_id,
         client_secret=new_secret,  # Plain text, shown only once
     )
+
+
+@router.get("/{client_id}/config/{platform}", response_class=PlainTextResponse,
+            summary="Download Sample Client Config")
+async def download_sample_config(
+    client_id: int,
+    platform: str,
+    request: Request,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """
+    Download a sample client config for this BBS: the file a claim hands back,
+    without the secret.
+
+    The hub keeps only the secret's hash, so `client_secret` is a CHANGE-ME
+    placeholder, like the game paths. The hub address, client ID, BBS name and
+    current leagues with their BBS indexes are filled in.
+
+    **Path Parameters:**
+    - `client_id`: Database ID of the client
+    - `platform`: `linux` (`config.toml`, Python client) or `windows`
+      (`config.psd1`, PowerShell client)
+    """
+    scope.require_client(client_id)
+    if platform not in ("linux", "windows"):
+        raise HTTPException(status_code=404, detail="Platform must be linux or windows")
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    leagues = claim_links.league_entries(db, client)
+    if platform == "windows":
+        name, text = "config.psd1", claim_links.render_config_psd1(client, None, public_url(request), leagues)
+    else:
+        name, text = "config.toml", claim_links.render_config_toml(client, None, public_url(request), leagues)
+    return PlainTextResponse(text, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # FTN addresses. A property of the BBS, unique across the hub; memberships

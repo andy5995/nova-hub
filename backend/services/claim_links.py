@@ -197,6 +197,15 @@ PLACEHOLDER_NOTE = (
     "The connection test needs none of them."
 )
 
+# A sample config downloaded later has no secret to put in it: the hub keeps
+# only its hash. The client_id is still filled in.
+SECRET_PLACEHOLDER = "CHANGE-ME"
+NO_SECRET_NOTE = (
+    "This sample has no client secret: the hub does not keep it. Put in the one "
+    "you saved when you claimed your credentials, or ask the hub admin for a new "
+    "claim link. Until then even the connection test fails."
+)
+
 
 def _toml_str(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -206,8 +215,11 @@ def _psd1_str(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def render_config_toml(client: Client, secret: str, hub_url: str, leagues: list[LeagueEntry]) -> str:
-    """config.toml for the Python client on Linux, under dosemu."""
+def render_config_toml(client: Client, secret: str | None, hub_url: str, leagues: list[LeagueEntry]) -> str:
+    """config.toml for the Python client on Linux, under dosemu.
+
+    With no secret it is a sample: the secret is a placeholder and says so.
+    """
     lines = [
         f"# Nova Client configuration for {client.bbs_name}, issued by the hub.",
         "#",
@@ -215,11 +227,15 @@ def render_config_toml(client: Client, secret: str, hub_url: str, leagues: list[
         "# that runs the client (chmod 600 config.toml).",
         "#",
         f"# {PLACEHOLDER_NOTE}",
+    ]
+    if secret is None:
+        lines += ["#", f"# {NO_SECRET_NOTE}"]
+    lines += [
         "",
         "[hub]",
         f"url = {_toml_str(hub_url)}",
         f"client_id = {_toml_str(client.client_id)}",
-        f"client_secret = {_toml_str(secret)}",
+        f"client_secret = {_toml_str(secret or SECRET_PLACEHOLDER)}",
         "",
         "[bbs]",
         "# Must match the name recorded against your BBS index in each game's nodes file.",
@@ -265,8 +281,8 @@ def render_config_toml(client: Client, secret: str, hub_url: str, leagues: list[
     return "\n".join(lines) + "\n"
 
 
-def render_config_psd1(client: Client, secret: str, hub_url: str, leagues: list[LeagueEntry]) -> str:
-    """config.psd1 for the PowerShell client on Windows."""
+def render_config_psd1(client: Client, secret: str | None, hub_url: str, leagues: list[LeagueEntry]) -> str:
+    """config.psd1 for the PowerShell client on Windows. No secret: a sample, as above."""
     lines = [
         "<#",
         f"    Nova Client configuration for {client.bbs_name}, issued by the hub.",
@@ -275,12 +291,16 @@ def render_config_psd1(client: Client, secret: str, hub_url: str, leagues: list[
         "    that runs the client can read it.",
         "",
         f"    {PLACEHOLDER_NOTE}",
+    ]
+    if secret is None:
+        lines += ["", f"    {NO_SECRET_NOTE}"]
+    lines += [
         "#>",
         "@{",
         "    Hub = @{",
         f"        Url          = {_psd1_str(hub_url)}",
         f"        ClientId     = {_psd1_str(client.client_id)}",
-        f"        ClientSecret = {_psd1_str(secret)}",
+        f"        ClientSecret = {_psd1_str(secret or SECRET_PLACEHOLDER)}",
         "    }",
         "",
         "    Bbs = @{",

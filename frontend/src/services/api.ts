@@ -157,6 +157,10 @@ export const clientsApi = {
   getClaimLink: (id: number) =>
     api.get(`/clients/${id}/claim-link`),
 
+  // A plain link, like the nodelist: the hub names the file. No secret in it.
+  sampleConfigUrl: (id: number, platform: 'linux' | 'windows') =>
+    `${api.defaults.baseURL}/clients/${id}/config/${platform}`,
+
   addOwner: (id: number, userId: number) =>
     api.post(`/clients/${id}/owners`, { user_id: userId }),
 

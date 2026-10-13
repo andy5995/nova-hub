@@ -433,6 +433,19 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
                 </div>
               </dl>
 
+              <div class="sample-config mt-4">
+                Sample client config:
+                <a :href="clientsApi.sampleConfigUrl(clientId, 'linux')" download>config.toml</a> (Linux)
+                &middot;
+                <a :href="clientsApi.sampleConfigUrl(clientId, 'windows')" download>config.psd1</a> (Windows)
+                <p class="form-hint mt-1">
+                  Your hub address, client ID, leagues and BBS numbers are filled in. Before you use it,
+                  replace every CHANGE-ME: the game paths, which only you know, and the client secret,
+                  which the hub does not keep. Use the secret you saved when you claimed your credentials,
+                  or ask the hub admin for a new claim link. Then run the validator before the first sync.
+                </p>
+              </div>
+
               <div v-if="authStore.isAdmin" class="credential-actions mt-4">
                 <select v-if="clientsStore.currentClient.owners?.length" v-model="claimFor" class="claim-for">
                   <option value="">For anyone with the link</option>

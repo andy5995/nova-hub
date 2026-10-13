@@ -4,6 +4,14 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Sample client config on the BBS's page.** The Client Information card
+  links a `config.toml` (Linux) and `config.psd1` (Windows) for the BBS, for
+  its own sysops and admins (`GET /clients/{id}/config/{linux|windows}`). It
+  is the file a claim hands back, with the hub address, client ID and
+  current leagues filled in, but the secret is a CHANGE-ME like the game
+  paths: the hub keeps only its hash. Downloading changes nothing.
+
 ### Changed
 - **The live rig drives the games through sr-harness.** The rig's pty runner,
   screen driver, 8.3 guard and BRE player walk were split out as the
