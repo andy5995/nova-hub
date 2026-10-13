@@ -43,13 +43,13 @@ if (( setup )); then
     "$PYTHON" -m pip install -r "$LIVE_DIR/requirements.txt"
 fi
 
-# pyte is what dosdrive reconstructs the screen with, and bre_agent is what
-# player.py asks for decisions. Neither is in nova-hub's own requirements: they
-# belong to the rig, and the rig venv is built once per machine, so a rebuilt or
-# fresh host is exactly where they go missing.
+# sr_harness drives the games (and brings pyte, its screen emulator), and
+# bre_agent is what player.py asks for decisions. Neither is in nova-hub's own
+# requirements: they belong to the rig, and the rig venv is built once per
+# machine, so a rebuilt or fresh host is exactly where they go missing.
 missing=$("$PYTHON" - <<'EOF'
 import importlib.util
-print(" ".join(m for m in ("pyte", "bre_agent")
+print(" ".join(m for m in ("sr_harness", "pyte", "bre_agent")
                 if importlib.util.find_spec(m) is None))
 EOF
 )

@@ -34,7 +34,7 @@ table is what actually holds.
 | — | One `process_batch()` is **one `ProcessingRun`** even when it spans several leagues or games. The separation is in the `(game_type, league_id)` grouping and in per-file `league_id`, not in the run count. |
 | Sequence numbers are dense, so any unseen number is a lost packet (the hub's gap detector) | **They are not.** Each new game day consumes *two* sequence numbers and writes one file at the second — `.002`, `.004`, `.006` on three consecutive days. Forced traffic (`REQUEST` + `OUTBOUND`) advances by one, so a route's stride depends on what is driving it. Production had **705 gap alerts, all unresolved**, gap=1 the largest bucket. Fixed 2026-09-12: the detector now learns each route's own stride. See `ROLLOUT_PLAN.md` card B-4. |
 | A healthy node emits a packet every game day | Only while it has something to say. An idle league produces on days one, two and three and then **nothing** — maintenance still runs and still prints its completion marker on days four to six. Silence is not a fault, and a "packet a day" health check would be the gap detector's mistake all over again. Generating longer runs of traffic needs player activity. |
-| — | Player activity is now available: `rig/player.py` drives `BRE.EXE FULL` through `dosdrive`, taking turns and sending interplanetary mail. `node.run()` still refuses `FULL` — that refusal is about *unattended* runs and remains correct. See §10. |
+| — | Player activity is now available: `rig/player.py` drives `BRE.EXE FULL` through sr-harness, taking turns and sending interplanetary mail. `node.run()` still refuses `FULL` — that refusal is about *unattended* runs and remains correct. See §10. |
 | — | **Duplicate user checking is a league setting** — page 2 of the configuration editor during RESET, and changeable mid-league. While it is on, BRE refuses a BBS user name already playing on another board: `Duplicate User Found on BBS #2 ... you cannot join this game.` There is no prompt to get past; the session simply never reaches the main menu. The rig leaves the setting at its default and gives each node its own name via `player.door_user()`, which is correct either way. |
 | — | The status screen **omits a line rather than printing a zero**: a realm holding no cash has no `Gold:` line, and an empty account has no `Bank:`. Absent means zero for those two; for anything else a missing field means the parse failed. |
 | — | BRE **banks the day's gold automatically** at the end of a turn, so a realm that has just played reads `Gold: 0` with a full account. Any "is this realm broke?" logic has to read gold *plus* bank. |
@@ -298,6 +298,13 @@ taken and the path of the JSONL log they were written to.
 
 ### Driving an interactive DOS game: what it actually takes
 
+The driving itself now lives in **sr-harness** (`lime/sr-harness`, pinned in
+`tests/live/requirements.txt`), which was split out of this rig's `dosdrive.py`,
+`dosrun.py`, `dospath.py` and `player.py`. It also plays Falcon's Eye. Its
+`.claude/skills/` (`driving-dos-doors`, `bre-harness`, `fe-harness`) are the
+maintained account of the traps below and of everything since; `rig/player.py`
+keeps only the bre_agent loop and the run-as-the-node-user plumbing. The history:
+
 `dosdrive.py` already had the pty and the pyte screen. Three things had to be
 added on top, each found the hard way:
 
@@ -375,22 +382,23 @@ reach it through `sudo -u`. One venv per machine, not per checkout: the node
 users have to be able to execute it, and each one's game tree is private to
 itself.
 
-Two things it needs that are not in `requirements.txt`, because they belong to
+Three things it needs that are not in `requirements.txt`, because they belong to
 the rig rather than to the product:
 
 | | why |
 |---|---|
-| `pyte==0.8.2` | the terminal emulator `dosdrive.py` reconstructs the 80×25 screen with |
+| `sr-harness @ ...@v0.1.0` | drives the games: the pty runner, the screen, the BRE player walk, the 8.3 guard |
+| `pyte==0.8.2` | the terminal emulator sr-harness reconstructs the 80×25 screen with, pinned exactly |
 | `bre-agent @ ...@v0.1.0` | the decision module `player.py` hands the wheel to for `agent_rounds` |
 
 ```sh
-tests/live/run.sh --setup          # installs both, then runs as normal
+tests/live/run.sh --setup          # installs them, then runs as normal
 ```
 
 `bre-agent` is pinned to a **tag, not a branch**: a scenario asserting on which
 action the agent chose is asserting on that version's goal weights and alignment
 table, so an unpinned dependency would make those tests change meaning without a
-commit. `claude/bre-agent` is public, so the rig and the nightly runner need no
+commit. `claude/bre-agent` and `lime/sr-harness` are public, so the rig and the nightly runner need no
 credentials — novatest-hl has no ssh access to gitea, but https works.
 
 Both were previously installed by hand and recorded nowhere. `run.sh` now checks

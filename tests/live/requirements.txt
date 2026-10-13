@@ -4,7 +4,7 @@
 #     tests/live/run.sh --setup
 #     # or: /srv/novatest/venv/bin/pip install -r tests/live/requirements.txt
 #
-# Both of these were previously installed by hand and recorded nowhere, which
+# pyte and bre-agent were previously installed by hand and recorded nowhere, which
 # meant a rebuilt rig host looked healthy until a walk failed deep inside dosemu
 # with an ImportError.
 #
@@ -17,9 +17,16 @@
 # dependency surface -- so this file adds what the rig needs and leaves the base
 # environment alone rather than forcing a downgrade that cannot install.
 
-# The terminal emulator dosdrive.py reconstructs the 80x25 screen with. A test
-# dependency for now; it becomes a product one if dosdrive is ever promoted into
-# backend/services (ROLLOUT_PLAN F-5).
+# sr-harness drives the games: the pty runner, the pyte screen, the BRE player
+# walk and the 8.3 guard. It began as this rig's dosdrive/dosrun/dospath/player
+# and was split out as its own library (lime/sr-harness) so it can be shared;
+# what is left in rig/ is the part that knows about nova-hub. Pinned to a tag
+# for the same reason bre-agent is: a walk that changes changes what the live
+# tests mean. The repo is public, so no credentials are needed.
+sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@v0.1.0
+
+# The terminal emulator sr-harness reconstructs the screen with. sr-harness
+# itself only asks for >=0.8.2; the rig keeps the exact version it was proved on.
 pyte==0.8.2
 
 # The decision module rig/player.py hands the wheel to for agent_rounds. Pinned
