@@ -4,6 +4,13 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **The live rig drives the games through sr-harness.** The rig's pty runner,
+  screen driver, 8.3 guard and BRE player walk were split out as the
+  standalone `lime/sr-harness` library (which also plays Falcon's Eye), and
+  the rig now installs it, pinned to v0.1.1, from `tests/live/requirements.txt`.
+  CI installs it too. Test-only: nothing in the product changed.
+
 ## [0.6.0] - 2026-10-12
 
 ### Added

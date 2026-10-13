@@ -387,7 +387,7 @@ the rig rather than to the product:
 
 | | why |
 |---|---|
-| `sr-harness @ ...@v0.1.0` | drives the games: the pty runner, the screen, the BRE player walk, the 8.3 guard |
+| `sr-harness @ ...@v0.1.1` | drives the games: the pty runner, the screen, the BRE player walk, the 8.3 guard |
 | `pyte==0.8.2` | the terminal emulator sr-harness reconstructs the 80×25 screen with, pinned exactly |
 | `bre-agent @ ...@v0.1.0` | the decision module `player.py` hands the wheel to for `agent_rounds` |
 

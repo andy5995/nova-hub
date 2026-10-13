@@ -23,7 +23,7 @@
 # what is left in rig/ is the part that knows about nova-hub. Pinned to a tag
 # for the same reason bre-agent is: a walk that changes changes what the live
 # tests mean. The repo is public, so no credentials are needed.
-sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@v0.1.0
+sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@v0.1.1
 
 # The terminal emulator sr-harness reconstructs the screen with. sr-harness
 # itself only asks for >=0.8.2; the rig keeps the exact version it was proved on.
