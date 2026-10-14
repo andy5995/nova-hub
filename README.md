@@ -19,8 +19,8 @@ For detailed instructions, see [docs/QUICKSTART.md](docs/QUICKSTART.md)
 ### Hub Server
 
 ```bash
-# Install dependencies
-uv pip install -r requirements.txt
+# Install dependencies (exactly the versions in uv.lock)
+uv sync
 
 # Create data directory
 mkdir -p ./data

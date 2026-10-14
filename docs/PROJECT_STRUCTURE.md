@@ -5,7 +5,9 @@ nova-hub/
 ├── README.md                    # Project overview and quick start
 ├── SETUP_GUIDE.md              # Detailed setup instructions
 ├── PROJECT_STRUCTURE.md         # This file
-├── requirements.txt             # Python dependencies
+├── pyproject.toml               # Python dependencies (ranges)
+├── uv.lock                      # The exact versions; `uv sync` installs them
+├── requirements.txt             # Exported from uv.lock, for pip installs
 ├── config.toml.example          # Configuration template
 ├── alembic.ini                  # Database migrations config
 ├── .env.example                 # Environment variables template

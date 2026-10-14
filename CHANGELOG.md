@@ -13,6 +13,13 @@ All notable changes to Nova Hub will be documented in this file.
   paths: the hub keeps only its hash. Downloading changes nothing.
 
 ### Changed
+- **Dependencies are locked with uv.** `pyproject.toml` lists them as ranges,
+  `uv.lock` holds the exact versions (indirect dependencies included), and
+  `uv sync` builds `.venv` from it. `requirements.txt` is now exported from
+  the lock, so the deploy playbook's `uv pip install -r requirements.txt`
+  installs exactly what CI tested; CI fails if it falls out of step. pytest
+  and pytest-asyncio moved to the dev group and are no longer installed in
+  production. No version changed.
 - **FastAPI 0.128.0, Pydantic 2.12.5, pydantic-settings 2.12.0** (were
   0.115.0, 2.10.0, 2.6.0). Deploying needs `uv pip install -r
   requirements.txt` before the restart.

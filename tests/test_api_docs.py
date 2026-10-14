@@ -7,7 +7,7 @@ from export_openapi import service_spec
 
 
 def _off_pin() -> list[str]:
-    """FastAPI and Pydantic shape the generated spec; CI installs requirements.txt's pins."""
+    """FastAPI and Pydantic shape the generated spec; CI installs uv.lock's (exported to requirements.txt)."""
     pins = dict(line.strip().split("==", 1)
                 for line in (DOCS.parent / "requirements.txt").read_text().splitlines()
                 if line.strip().lower().startswith(("fastapi==", "pydantic==")))
@@ -20,7 +20,7 @@ def test_api_docs_are_current():
     hint = ""
     if off_pin := _off_pin():
         hint = (f" This venv has {', '.join(off_pin)}, which changes the output:"
-                " regenerate in a venv built from requirements.txt.")
+                " run `uv sync` first.")
     assert not out_of_date, (
         f"{out_of_date} out of date: run .venv/bin/python export_api_docs.py and commit docs/.{hint}"
     )

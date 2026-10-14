@@ -27,12 +27,10 @@ This allows you to update code without affecting production data.
 Using `uv` (recommended):
 ```bash
 cd nova-hub
-uv venv
-source .venv/bin/activate  # or use uv directly
-uv pip install -r requirements.txt
+uv sync   # creates .venv with exactly the versions in uv.lock
 ```
 
-Using `pip`:
+Using `pip` (requirements.txt is exported from uv.lock):
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -247,7 +245,7 @@ If login fails with valid credentials:
 ### Import Errors
 
 If you get import errors when starting:
-1. Ensure all dependencies are installed: `uv pip install -r requirements.txt`
+1. Ensure all dependencies are installed: `uv sync`
 2. Check that you're using the virtual environment
 3. Verify all required service modules exist in `app/services/`
 

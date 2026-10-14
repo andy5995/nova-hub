@@ -14,9 +14,8 @@ Get Nova Hub running in 5 minutes.
 # 1. Clone/navigate to the project
 cd nova-hub
 
-# 2. Create virtual environment and install dependencies
-uv venv
-uv pip install -r requirements.txt
+# 2. Create .venv with exactly the locked dependencies
+uv sync
 
 # 3. Create data directory
 mkdir -p ./data
@@ -111,7 +110,7 @@ ls -la ./data/
 **Import errors?**
 ```bash
 # Reinstall dependencies
-uv pip install -r requirements.txt
+uv sync
 
 # Check virtual environment is activated
 which python  # Should show .venv path
