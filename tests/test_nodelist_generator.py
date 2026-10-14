@@ -285,6 +285,23 @@ def test_an_unchanged_nodelist_leaves_the_game_file_alone(db_session, tmp_path, 
     assert game_file.stat().st_mtime_ns == old
 
 
+def test_an_unchanged_nodelist_is_not_rewritten_or_logged(db_session, tmp_path, league, caplog):
+    """Regenerating after every batch logged "Generated nodelist" each run on
+    prod, though nothing had changed."""
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+    dest = _generate(db_session, tmp_path, league)
+    old = dest.stat().st_mtime_ns - 10_000_000_000
+    import os
+    os.utime(dest, ns=(old, old))
+
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        assert _generate(db_session, tmp_path, league) == dest
+
+    assert dest.stat().st_mtime_ns == old
+    assert "Generated nodelist" not in caplog.text
+
+
 def test_a_new_member_reaches_the_game_file(db_session, tmp_path, league):
     _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
     folder, dosemu = _game(tmp_path, league)

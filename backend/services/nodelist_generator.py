@@ -37,8 +37,9 @@ Writing the file does not reach the members. They get a nodelist one way only:
 the hub's own game sends BRNODES.<league> from its OUTBOUND after its nodes file
 changes, and processing_service.handle_nodelist_file queues that to every member.
 So generate() also puts the nodelist into the hub game's own nodes file, which
-is what an admin used to do by hand. It writes only when the bytes differ, so a
-regeneration that changes nothing does not make the game resend it.
+is what an admin used to do by hand. Both files are written only when the bytes
+differ, so a regeneration that changes nothing does not make the game resend it
+or log as if it had.
 """
 
 import os
@@ -212,11 +213,16 @@ class NodelistGenerator:
         filename = nodelist_filename(league)
         dest = directory / filename
 
-        self._write_atomic(dest, content)
-        logger.info(
-            f"Generated nodelist {filename} for league {league.full_id} "
-            f"(hub entry {index_line!r}; {len(members)} member(s))"
-        )
+        # Processing regenerates after every batch, and almost always nothing
+        # has changed. Saying "Generated" each time read as if it had.
+        if dest.is_file() and dest.read_bytes() == content.encode("utf-8"):
+            logger.debug(f"Nodelist {filename} for league {league.full_id} is unchanged")
+        else:
+            self._write_atomic(dest, content)
+            logger.info(
+                f"Generated nodelist {filename} for league {league.full_id} "
+                f"(hub entry {index_line!r}; {len(members)} member(s))"
+            )
         self._install_in_game(league, game, content)
         return dest
 
