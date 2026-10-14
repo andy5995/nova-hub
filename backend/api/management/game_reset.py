@@ -12,7 +12,7 @@ from backend.logging_config import get_logger
 from backend.models.database import League, LeagueGameSettings, SysopUser
 from backend.schemas.game_reset import (
     GameResetForm, ObservedSettings, ResetApplied, ResetChoice, ResetDraft,
-    ResetDraftSave, ResetField,
+    ResetDraftSave, ResetField, ResetWarning,
 )
 from backend.services import audit
 from backend.services.game_reset import drafts
@@ -33,10 +33,13 @@ def _league(db: Session, league_id: int) -> League:
     return league
 
 
-def _draft(d) -> Optional[ResetDraft]:
+def _draft(d, game_type: str) -> Optional[ResetDraft]:
     if d is None:
         return None
-    return ResetDraft(id=d.id, version=d.version, settings=d.settings, notes=d.notes,
+    return ResetDraft(id=d.id, version=d.version, settings=d.settings,
+                      warnings=[ResetWarning(field=f, message=m)
+                                for f, m in drafts.warnings(game_type, d.settings)],
+                      notes=d.notes,
                       created_by=d.created_by, created_at=_iso(d.created_at),
                       updated_by=d.updated_by, updated_at=_iso(d.updated_at))
 
@@ -52,14 +55,15 @@ def _form(db: Session, league: League) -> GameResetForm:
         fields=[ResetField(id=f.id, label=f.label, page=f.page, group=f.group,
                            kind=f.kind, default=f.default, min=f.min, max=f.max,
                            choices=[ResetChoice(letter=l, name=n) for l, n in f.choices],
-                           interbbs=f.interbbs, min_reason=f.min_reason, note=f.note,
+                           interbbs=f.interbbs, advised_min=f.advised_min,
+                           advised_reason=f.advised_reason, note=f.note,
                            admin_note=f.admin_note,
                            depends_on=list(f.depends_on) if f.depends_on else None,
                            help_title=f.help_title, help=f.help)
                 for f in fields_for(league.game_type)],
         defaults=defaults(league.game_type),
         league_wide_help=LEAGUE_WIDE_HELP[league.game_type][1],
-        draft=_draft(drafts.current_draft(db, league)),
+        draft=_draft(drafts.current_draft(db, league), league.game_type),
         last_applied=None if applied is None else ResetApplied(
             id=applied.id, settings=applied.settings, applied_by=applied.applied_by,
             applied_at=_iso(applied.applied_at), game_start=_iso(applied.game_start)),
@@ -96,6 +100,9 @@ async def save_reset_draft(
     db: Session = Depends(get_db),
 ):
     """Check every setting against the game's limits and save the league's draft.
+
+    A value below our advised minimum is saved, and listed in the draft's
+    `warnings`.
 
     Answers 422 listing each field that fails, and 409 when someone else saved the
     draft since `version` was loaded. Fields left out take the game's defaults.

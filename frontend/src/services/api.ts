@@ -353,7 +353,8 @@ export interface ResetField {
   max: number | null
   choices: { letter: string; name: string }[]
   interbbs: boolean
-  min_reason: string | null
+  advised_min: number | null // ours: below it the form warns but allows
+  advised_reason: string | null
   note: string | null
   admin_note: string | null
   depends_on: [string, ResetValue] | null
@@ -365,6 +366,7 @@ export interface ResetDraft {
   id: number
   version: number
   settings: Record<string, ResetValue>
+  warnings: { field: string; message: string }[]
   notes: string | null
   created_by: string | null
   created_at: string | null

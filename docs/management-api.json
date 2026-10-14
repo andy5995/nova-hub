@@ -3992,6 +3992,14 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResetWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -4053,6 +4061,29 @@
               }
             ],
             "title": "Admin Note"
+          },
+          "advised_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ours, not the game's: below it the form warns but allows",
+            "title": "Advised Min"
+          },
+          "advised_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advised Reason"
           },
           "choices": {
             "default": [],
@@ -4130,17 +4161,6 @@
             ],
             "title": "Min"
           },
-          "min_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Reason"
-          },
           "note": {
             "anyOf": [
               {
@@ -4167,6 +4187,24 @@
           "help"
         ],
         "title": "ResetField",
+        "type": "object"
+      },
+      "ResetWarning": {
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "ResetWarning",
         "type": "object"
       },
       "TakenIndex": {
@@ -7398,7 +7436,7 @@
         ]
       },
       "put": {
-        "description": "Check every setting against the game's limits and save the league's draft.\n\nAnswers 422 listing each field that fails, and 409 when someone else saved the\ndraft since `version` was loaded. Fields left out take the game's defaults.",
+        "description": "Check every setting against the game's limits and save the league's draft.\n\nA value below our advised minimum is saved, and listed in the draft's\n`warnings`.\n\nAnswers 422 listing each field that fails, and 409 when someone else saved the\ndraft since `version` was loaded. Fields left out take the game's defaults.",
         "operationId": "save_reset_draft_api_v1_leagues__league_id__reset_draft_put",
         "parameters": [
           {

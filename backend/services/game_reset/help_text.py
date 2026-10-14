@@ -84,13 +84,13 @@ BRE = {
         'With this option disabled, investment interest rates will drop (possibly\n'
         'down to 1/2 the initial value) if there is too much investing going on.\n'
         'On the other end, with little investing going on, the rate can double the\n'
-        'initial value.  If you do not wish have this rate changing, you can enabled\n'
+        'initial value.  If you do not wish have this rate changing, you can enable\n'
         'this option.'
     ),
     'tax_rate': (
         'Planetary Tax Rate',
         'The Tax rate can be used to control the growth of empires.  A high tax\n'
-        'rate will generally equalize the size of baronies by "stealing from the\n'
+        'rate will generally equalise the size of baronies by "stealing from the\n'
         'rich and giving to the poor", while low tax rates allow large empires to\n'
         'grow much more easily.  Tax Refunds given daily are based on the total\n'
         'amount of income the BBS recieves in taxes.  Randomly throughout the\n'
@@ -102,9 +102,9 @@ BRE = {
         'Maximum Region Purchases',
         'This option limits the number of regions a player can buy in a single turn\n'
         'to prevent players with large amounts of cash from suddenly "jumping" in\n'
-        'regions.  This value has little affect in the newer versions of\n'
-        'BRE (v0.950+) beause of the new region pricing system, except when a small\n'
-        'empire recieves large amounts of cash from an ally.'
+        'regions.  This value works in combination with the region pricing system,\n'
+        'which can scale costs upward, except when a small\n'
+        'empire receives large amounts of cash from an ally.'
     ),
     'max_players': (
         'Maximum Players',
@@ -156,8 +156,7 @@ BRE = {
     ),
     'attack_damage': (
         'GamePlay: Attack Damage',
-        'The GamePlay options may be set to the following values: High, Medium\n'
-        'Low, or None.  [H,M,L,N]  Some settings will not be allowed for certain\n'
+        'Some settings will not be allowed for certain\n'
         'options.  The Attack Damage option defines the amount of forces destroyed in\n'
         'combat.  A High setting will likely reduce combat & make strategy more\n'
         'important, while a low setting will make constant warfare with less strategy\n'
@@ -166,8 +165,7 @@ BRE = {
     ),
     'attack_rewards': (
         'GamePlay: Attack Region Gains',
-        'The GamePlay options may be set to the following values: High, Medium\n'
-        'Low, or None.  [H,M,L,N]  Some settings will not be allowed for certain\n'
+        'Some settings will not be allowed for certain\n'
         'options.  The Attack Region Gains option affects the number of regions won\n'
         'in all attacks. A High setting will make attacking more devastating while a\n'
         'low setting will make it more difficult to destroy smaller empires.\n'
@@ -197,7 +195,7 @@ BRE = {
         'The GamePlay options may be set to the following values: High, Medium\n'
         'Low, or None.  [H,M,L,N]  Some settings will not be allowed for certain\n'
         'options.  The Terrorism Cost option affects the amount of money charged when\n'
-        'sending InterBBS Terrorists. A High setting will make terrorism more\n'
+        'sending InterBBS Terrorists. A High setting will make terrorism less\n'
         'popular.\n'
         'It may be set to either High, Medium, Low, or None - Default is Medium.'
     ),
@@ -268,9 +266,10 @@ BRE = {
     'local_attacks': (
         'InterBBS: Local Attacks',
         'This option enables or disables the ability to attack other local empires\n'
-        'in Interplanetary games.  We highly recommend leaving this option enabled,\n'
-        "forcing BBS's to use teamwork to remove troublemakers and allowing a\n"
-        'method to destroy spies, etc.'
+        'in Interplanetary games.  Leaving this option enabled,\n'
+        "forces BBS's to use teamwork to remove troublemakers and allowing a\n"
+        'method to destroy spies, etc.  Leaving it disabled limits the ability of moles\n'
+        'to cause local damage during a campaign.'
     ),
     'local_scoring': (
         'InterBBS: Local Attack Scoring',
@@ -469,4 +468,3 @@ FE = {
         'fresh or if problems have developed requiring a league-wide reset.'
     ),
 }
-

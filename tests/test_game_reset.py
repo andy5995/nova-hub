@@ -75,11 +75,13 @@ def test_every_field_is_complete(game):
             assert f.help_title and f.help, f.id
             assert "toggled" not in f.help and "^\\" not in f.help, f.id
         if f.kind == NUMBER:
-            assert 0 <= f.min <= f.default <= f.max, f.id
+            assert f.min == 0 and f.default <= f.max, f.id
+            assert f.advised_min is None or f.advised_reason, f.id
         if f.kind == CHOICE:
             assert f.default in [letter for letter, _ in f.choices], f.id
-    # The defaults pass our own checks.
-    assert drafts.validate(game, {}, TODAY)[1] == []
+    # The defaults pass our own checks, without a warning.
+    settings, errors = drafts.validate(game, {}, TODAY)
+    assert errors == [] and drafts.warnings(game, settings) == []
 
 
 def test_choices_are_only_what_the_editor_accepts():
@@ -98,12 +100,23 @@ def test_numbers_reject_rather_than_clamp():
     assert "turns_per_day" in errors_for("B", {"turns_per_day": 21})
     assert "turns_per_day" in errors_for("F", {"turns_per_day": 16})
     assert "turns_per_day" not in errors_for("B", {"turns_per_day": 20})
-    assert "At least 1" in errors_for("B", {"turns_per_day": 0})["turns_per_day"]
-    assert "max_attacks" in errors_for("F", {"max_attacks": 3})
-    # 0 is a real choice where we set no minimum.
+    assert "turns_per_day" in errors_for("B", {"turns_per_day": -1})
+    # 0 is the game's own minimum everywhere.
     assert errors_for("B", {"protection_turns": 0, "indiv_attacks": 0}) == {}
     assert "tax_rate" in errors_for("B", {"tax_rate": "50"})
     assert "tax_rate" in errors_for("B", {"tax_rate": True})
+
+
+def test_below_the_usual_minimum_warns_but_is_allowed():
+    # A free-for-all stage where nobody can buy any more land is a real choice.
+    settings, errors = drafts.validate("B", {"max_region_purchase": 0,
+                                             "turns_per_day": 0}, TODAY)
+    assert errors == []
+    warned = dict(drafts.warnings("B", settings))
+    assert set(warned) == {"max_region_purchase", "turns_per_day"}
+    assert "usual minimum of 1" in warned["max_region_purchase"]
+    settings, errors = drafts.validate("F", {"max_attacks": 3}, TODAY)
+    assert errors == [] and dict(drafts.warnings("F", settings)).keys() == {"max_attacks"}
 
 
 def test_choices_toggles_and_unknowns():
@@ -200,6 +213,7 @@ def test_save_update_conflict_and_discard(api):
     assert r.status_code == 200, r.text
     draft = r.json()["draft"]
     assert draft["version"] == 1 and draft["settings"]["turns_per_day"] == 10
+    assert draft["warnings"] == []
     assert draft["settings"]["tax_rate"] == 50  # filled from the defaults
     assert draft["updated_by"] == "mantis"
 
@@ -229,6 +243,13 @@ def test_invalid_settings_name_each_field(api):
     assert r.status_code == 422
     assert {d["loc"][-1] for d in r.json()["detail"]} == {"turns_per_day", "attack_damage"}
     assert db.query(GameReset).count() == 0
+
+
+def test_a_draft_below_the_usual_minimum_saves_with_its_warning(api):
+    client, _, lid = api
+    r = client.put(f"{BASE}/{lid}/reset/draft", json={"settings": {"max_region_purchase": 0}})
+    assert r.status_code == 200, r.text
+    assert [w["field"] for w in r.json()["draft"]["warnings"]] == ["max_region_purchase"]
 
 
 def test_fe_league_gets_fe_fields(api):

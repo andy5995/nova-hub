@@ -32,7 +32,7 @@ const serverErrors = ref<Record<string, string>>({})
 const GROUPS = [
   { id: 'General', title: 'General' },
   { id: 'GamePlay', title: 'GamePlay' },
-  { id: 'InterBBS', title: 'InterBBS (*)' }
+  { id: 'InterBBS', title: 'InterBBS' }
 ]
 
 // What the hub decoded from the league's last Configupdate, by field id.
@@ -82,7 +82,7 @@ function problem(f: ResetField): string {
   const v = values.value[f.id]
   if (f.kind === 'number') {
     if (typeof v !== 'number' || !Number.isInteger(v)) return 'Enter a whole number.'
-    if (f.min !== null && v < f.min) return `At least ${f.min}.${f.min_reason ? ' ' + f.min_reason : ''}`
+    if (f.min !== null && v < f.min) return `At least ${f.min}.`
     if (f.max !== null && v > f.max) return `At most ${f.max}: the game's own limit.`
   }
   if (f.kind === 'date' && f.default !== null && !v) return 'Enter a date.'
@@ -91,6 +91,18 @@ function problem(f: ResetField): string {
 
 const problems = computed(() =>
   (form.value?.fields ?? []).filter((f) => shown(f) && problem(f)).length
+)
+
+// Below our usual minimum: allowed, since a league may mean it (a late
+// free-for-all where nobody can buy anything), but worth a second look.
+function advice(f: ResetField): string {
+  const v = values.value[f.id]
+  if (f.advised_min === null || typeof v !== 'number' || v >= f.advised_min) return ''
+  return `Below the usual minimum of ${f.advised_min}: ${f.advised_reason}`
+}
+
+const advisories = computed(() =>
+  (form.value?.fields ?? []).filter((f) => shown(f) && !problem(f) && advice(f)).length
 )
 
 function display(f: ResetField, v: ResetValue): string {
@@ -263,6 +275,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
               <span v-if="problems" class="badge badge-danger">
                 {{ problems }} to fix
               </span>
+              <span v-if="advisories" class="badge badge-warning">
+                {{ advisories }} below the usual minimum
+              </span>
             </div>
             <div class="actions">
               <button class="btn btn-secondary btn-sm" @click="useDefaults">
@@ -303,11 +318,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
               v-for="f in fieldsIn(g.id)"
               :key="f.id"
               class="field"
-              :class="{ changed: changedFromDefault(f), invalid: !!problem(f) }"
+              :class="{ changed: changedFromDefault(f), invalid: !!problem(f), advised: !problem(f) && !!advice(f) }"
             >
               <div class="field-input">
                 <label :for="`f-${f.id}`">
-                  <span v-if="f.interbbs" class="star" title="InterBBS setting">*</span>{{ f.label }}
+                  {{ f.label }}
                 </label>
 
                 <input
@@ -351,15 +366,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
                   <span v-if="current(f) !== null">Current game: {{ current(f) }}</span>
                 </div>
                 <p v-if="problem(f)" class="field-error">{{ problem(f) }}</p>
+                <p v-else-if="advice(f)" class="field-advice">{{ advice(f) }}</p>
               </div>
 
               <div class="field-help">
                 <h4 v-if="f.help_title">{{ f.help_title }}</h4>
                 <p v-for="(para, i) in paragraphs(f.help)" :key="i" class="help-text">{{ para }}</p>
                 <p v-if="f.note" class="our-note"><strong>Note:</strong> {{ f.note }}</p>
-                <p v-if="f.min_reason && f.min" class="our-note">
-                  <strong>Minimum {{ f.min }}:</strong> the game itself takes 0 here.
-                  {{ f.min_reason }}
+                <p v-if="f.advised_min" class="our-note">
+                  <strong>Usually at least {{ f.advised_min }}:</strong> {{ f.advised_reason }}
+                  The game takes 0, and so does this form, for a league that means it.
                 </p>
                 <p v-if="f.admin_note" class="our-note admin-note">
                   <strong>Admins only:</strong> {{ f.admin_note }}
@@ -494,16 +510,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
   border-left-color: var(--color-danger);
 }
 
+.field.advised {
+  border-left-color: var(--color-warning);
+}
+
 .field-input label {
   display: block;
   font-weight: 600;
   margin-bottom: 0.375rem;
 }
 
-.star {
-  color: var(--color-primary);
-  margin-right: 0.125rem;
-}
 
 .date-input {
   display: block;
@@ -528,6 +544,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
   margin-top: 0.375rem;
   font-size: 0.8rem;
   color: var(--color-text-muted);
+}
+
+.field-advice {
+  margin: 0.375rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-warning);
 }
 
 .field-error {

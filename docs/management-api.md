@@ -1784,6 +1784,9 @@ Validation Error
 
 Check every setting against the game's limits and save the league's draft.
 
+A value below our advised minimum is saved, and listed in the draft's
+`warnings`.
+
 Answers 422 listing each field that fails, and 409 when someone else saved the
 draft since `version` was loaded. Fields left out take the game's defaults.
 

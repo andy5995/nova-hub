@@ -50,8 +50,7 @@ def validate(game_type: str, settings: dict, today: date) -> tuple[dict, list]:
                 errors.append((f.id, "Must be a whole number."))
                 continue
             if v < f.min:
-                why = f" {f.min_reason}" if f.min_reason else ""
-                errors.append((f.id, f"At least {f.min}.{why}"))
+                errors.append((f.id, f"At least {f.min}."))
                 continue
             if v > f.max:
                 errors.append((f.id, f"At most {f.max}: the game's own limit."))
@@ -87,6 +86,21 @@ def validate(game_type: str, settings: dict, today: date) -> tuple[dict, list]:
     if out.get("join_date") and out["join_date"] < start:
         errors.append(("join_date", "Can't be before the game starts."))
     return out, errors
+
+
+def warnings(game_type: str, settings: dict) -> list:
+    """[(field id, message), ...] for values below our advised minimums.
+
+    Allowed, unlike errors: a league may mean it. The form shows them, and
+    performing a reset will list them for a second look.
+    """
+    out = []
+    for f in fields_for(game_type):
+        v = settings.get(f.id)
+        if f.advised_min is not None and isinstance(v, int) and v < f.advised_min:
+            out.append((f.id, f"Below the usual minimum of {f.advised_min}: "
+                              f"{f.advised_reason}"))
+    return out
 
 
 def current_draft(db: Session, league: League) -> Optional[GameReset]:

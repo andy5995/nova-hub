@@ -22,7 +22,9 @@ class ResetField(BaseModel):
     max: Optional[int] = None
     choices: List[ResetChoice] = []
     interbbs: bool = False
-    min_reason: Optional[str] = None
+    advised_min: Optional[int] = Field(
+        None, description="Ours, not the game's: below it the form warns but allows")
+    advised_reason: Optional[str] = None
     note: Optional[str] = None
     admin_note: Optional[str] = None
     depends_on: Optional[List[Any]] = Field(
@@ -31,10 +33,16 @@ class ResetField(BaseModel):
     help: str
 
 
+class ResetWarning(BaseModel):
+    field: str
+    message: str
+
+
 class ResetDraft(BaseModel):
     id: int
     version: int
     settings: Dict[str, Any]
+    warnings: List[ResetWarning] = []
     notes: Optional[str] = None
     created_by: Optional[str] = None
     created_at: Optional[str] = None

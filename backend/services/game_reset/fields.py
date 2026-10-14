@@ -8,9 +8,10 @@ from the Console".
 
 Things the editor does that the table encodes:
 
-- Neither game has any minimum: every number field takes 0. `min` is our own
-  judgement of where a smaller value makes the game unplayable; `min_reason`
-  says why.
+- Neither game has any minimum: every number field takes 0, and so does the
+  form. `advised_min` is our judgement of where a smaller value stops a normal
+  game, and `advised_reason` says why. It only warns: a 0 can be a real league
+  choice later on, say a free-for-all stage where nobody can buy anything.
 - Over the maximum, the editor puts the maximum on the prompt and waits for a
   second Enter. A driver typing one Enter falls out of step, so nothing past
   validation may carry an over-max value.
@@ -49,11 +50,14 @@ class Field:
     group: str                      # how the form groups it
     kind: str
     default: object                 # None for Start Date: the day of the reset
-    min: Optional[int] = None
+    min: Optional[int] = None       # the game's own: 0 for every number
     max: Optional[int] = None
+    advised_min: Optional[int] = None
     choices: tuple = ()             # ((letter, name), ...) in the editor's order
-    interbbs: bool = False          # shown with a * in the editor
-    min_reason: Optional[str] = None
+    # The editor marks these with a *. The form doesn't: the hub only runs
+    # InterBBS games, so every setting applies.
+    interbbs: bool = False
+    advised_reason: Optional[str] = None
     note: Optional[str] = None      # ours, where the game and its help disagree
     admin_note: Optional[str] = None
     # Only asked when another field has this value: (field id, value)
@@ -62,8 +66,8 @@ class Field:
     help: str = ""
 
 
-def _number(id, label, page, group, default, max, *, min=0, **kw):
-    return Field(id, label, page, group, NUMBER, default, min=min, max=max, **kw)
+def _number(id, label, page, group, default, max, **kw):
+    return Field(id, label, page, group, NUMBER, default, min=0, max=max, **kw)
 
 
 def _choice(id, label, page, group, default, choices, **kw):
@@ -80,16 +84,25 @@ _START = dict(
          "the reset. A later date lets players join now but not play until then.",
 )
 _JOIN = dict(note="Leave at 01/01/2999 for no cut-off.")
-_TURNS = dict(min=1, min_reason="0 turns means nobody can play.")
-_PLAYERS = dict(min=1, min_reason="0 means nobody can join.")
+_TURNS = dict(advised_min=1, advised_reason="0 turns means nobody can play.")
+_PLAYERS = dict(advised_min=1, advised_reason="0 means nobody can join.")
 _LOST = dict(
-    min=1, min_reason="0 would void every attack as soon as it was sent.",
-    note="A board's own RESOURCE.DAT can override this locally, so the league "
+    advised_min=1, advised_reason="0 would void every attack as soon as it was sent.",
+    note="Missing In Transit (MIT) is calculated at midnight maintenance. "
+         "A setting of '1' can cause attacks sent close to midnight to be "
+         "marked MIT very quickly. "
+         "A board's own RESOURCE.DAT can override this locally, so the league "
          "setting is not the final word on any one board. The hub can't see or "
-         "change that file.",
-)
-_NO_NONE = dict(note="The help lists None, but the editor only accepts High, "
-                     "Medium or Low here.")
+         "change that file."
+    )
+_STEADY_INVESTMENT = dict(note="Variable investment rates are calculated locally to each board, "
+         "meaning different boards' investment rate can drift considerably from eachother over time."
+    )
+_LAND_PER_DAY = dict(note="If max purchasable regions is >= land created per day, "
+         "the first player of the day can buy all of the available land. "
+    )
+_ATTACK_DAMAGE = dict(note="Only effective if InterBBS -> Allow Local Attacks is enabled. ")
+_ATTACK_REWARDS = dict(note="Only effective if InterBBS -> Allow Local Attacks is enabled. ")
 
 _BRE = (
     Field("start_date", "Game Start Date", 1, PAGE_GENERAL, DATE, None, **_START),
@@ -97,21 +110,21 @@ _BRE = (
     _number("turns_per_day", "Turns Per Day", 1, PAGE_GENERAL, 8, 20, **_TURNS),
     _number("protection_turns", "Turns of Protection", 1, PAGE_GENERAL, 20, 200),
     _number("initial_land", "Initial Market Land", 1, PAGE_GENERAL, 0, 50000),
-    _number("land_per_day", "Land Created / Day", 1, PAGE_GENERAL, 1000, 5000),
+    _number("land_per_day", "Land Created / Day", 1, PAGE_GENERAL, 1000, 5000, **_LAND_PER_DAY),
     _number("interest_rate", "Interest Rate", 1, PAGE_GENERAL, 50, 200),
     _number("investment_rate", "Standard Investment Rate", 1, PAGE_GENERAL, 35, 100),
-    _toggle("steady_investment", "Steady Investment Rate", 1, PAGE_GENERAL, False),
+    _toggle("steady_investment", "Steady Investment Rate", 1, PAGE_GENERAL, False, **_STEADY_INVESTMENT),
     _number("tax_rate", "Tax Rate", 1, PAGE_GENERAL, 50, 200),
     _number("max_region_purchase", "Max Purchasable Regions", 1, PAGE_GENERAL, 500, 10000,
-            min=1, min_reason="0 stops all region buying."),
+            advised_min=1, advised_reason="0 stops all region buying."),
     _number("max_players", "Max Players Per BBS", 1, PAGE_GENERAL, 25, 25, **_PLAYERS),
     _choice("buy_military", "Buy Military", 1, PAGE_GAMEPLAY, "Y",
             (("Y", "Yes"), ("N", "No"), ("L", "Limited"))),
     _choice("maintenance_costs", "Maintenance Costs", 1, PAGE_GAMEPLAY, "M", HMLN),
     _choice("trade_costs", "Trade Deal Costs", 1, PAGE_GAMEPLAY, "M", HMLN),
     _choice("region_costs", "Region Costs", 1, PAGE_GAMEPLAY, "M", HMLN),
-    _choice("attack_damage", "Attack Damage", 1, PAGE_GAMEPLAY, "M", HML, **_NO_NONE),
-    _choice("attack_rewards", "Attack Rewards", 2, PAGE_GAMEPLAY, "M", HML, **_NO_NONE),
+    _choice("attack_damage", "Attack Damage", 1, PAGE_GAMEPLAY, "M", HML, **_ATTACK_DAMAGE),
+    _choice("attack_rewards", "Attack Rewards", 2, PAGE_GAMEPLAY, "M", HML, **_ATTACK_REWARDS),
     _choice("sabre", "Sabre Handling", 2, PAGE_GAMEPLAY, "U",
             (("N", "None/Disabled"), ("U", "User Select/Original"), ("R", "Random"),
              ("C", "Constant")),
@@ -126,9 +139,7 @@ _BRE = (
                        "turrets, tanks); 5-6 airbases (jets only); 7-8 regions, "
                        "destroyed outright; 9-10 the food supply."),
     _choice("attack_costs", "Attack Costs", 2, PAGE_INTERBBS, "M", HMLN, interbbs=True),
-    _choice("terrorist_costs", "Terrorist Costs", 2, PAGE_INTERBBS, "M", HMLN, interbbs=True,
-            note='"A High setting will make terrorism more popular" reads as though '
-                 'it should say less popular.'),
+    _choice("terrorist_costs", "Terrorist Costs", 2, PAGE_INTERBBS, "M", HMLN, interbbs=True),
     _number("indiv_attacks", "Individual Attacks / Day", 2, PAGE_INTERBBS, 1, 10,
             interbbs=True),
     _number("group_attacks", "Group Attacks / Day", 2, PAGE_INTERBBS, 1, 10, interbbs=True),
@@ -155,7 +166,7 @@ _FE = (
     _number("initial_land", "Initial Market Land", 1, PAGE_GENERAL, 20000, 50000),
     _number("land_per_day", "Land Created / Day", 1, PAGE_GENERAL, 2000, 5000),
     _number("wages", "Standard Wages", 1, PAGE_GENERAL, 15, 200,
-            min=1, min_reason="0 makes workers free."),
+            advised_min=1, advised_reason="0 makes workers free."),
     _number("start_land", "Starting Land", 1, PAGE_GENERAL, 100, 2000),
     _number("start_people", "Starting People", 1, PAGE_GENERAL, 100, 2000),
     _number("start_silver", "Starting Silver", 1, PAGE_GENERAL, 15000, 100000),
@@ -164,9 +175,9 @@ _FE = (
     _number("start_weapons", "Starting Weapons", 1, PAGE_GENERAL, 400, 2000),
     _number("start_runes", "Starting Runes", 1, PAGE_GENERAL, 25, 1000),
     _number("max_attacks", "Max Attacks", 1, PAGE_GENERAL, 7, 12,
-            min=4, min_reason="The help: some races have attack penalties."),
+            advised_min=4, advised_reason="The help: some races have attack penalties."),
     _number("max_spells", "Max Spells", 1, PAGE_GENERAL, 15, 40,
-            min=5, min_reason="The help: some races have spell penalties."),
+            advised_min=5, advised_reason="The help: some races have spell penalties."),
     _number("max_players", "Max Players", 1, PAGE_GENERAL, 25, 25, **_PLAYERS),
     _number("lost_attack_days", 'Days for "Lost Attacks"', 2, PAGE_INTERBBS, 10, 30,
             interbbs=True, **_LOST),
