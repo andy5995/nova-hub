@@ -1,6 +1,6 @@
 # Nova Hub - Service API
 
-**Version:** 0.6.0
+**Version:** 0.7.0
 
 
 # Service API for nova_client

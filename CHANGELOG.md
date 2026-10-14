@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-14
+
 ### Fixed
 - **A board added through self-service never reached the other boards.**
   Approving it regenerated the hub-side nodelist (the one you can download),
