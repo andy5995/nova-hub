@@ -4,6 +4,20 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **A board added through self-service never reached the other boards.**
+  Approving it regenerated the hub-side nodelist (the one you can download),
+  but members only receive a nodelist when the hub's own game sends it, which
+  BRE does on a maintenance day after its `BRNODES.DAT` changes. Nothing
+  changed that file, so the new board was missing from the hub's game and
+  from every member (prod, 015B/015F, Tentacle BBS). Generating a nodelist
+  now also writes it into the hub game's nodes file, under the name and case
+  the install already uses, and only when the content differs, so an
+  unchanged nodelist is not resent. This covers approvals, membership edits
+  (at the next processing run) and `POST /leagues/{id}/generate-nodelist`,
+  which now returns `warnings` when a league has no usable `game_folder`.
+  Proved on the live rig: `tests/live/test_nodelist_publish.py`.
+
 ### Added
 - **Sample client config on the BBS's page.** The Client Information card
   links a `config.toml` (Linux) and `config.psd1` (Windows) for the BBS, for

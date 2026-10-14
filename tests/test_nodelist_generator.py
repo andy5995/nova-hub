@@ -227,3 +227,108 @@ def test_no_temporary_file_is_left_behind(db_session, tmp_path, league):
     _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
     dest = _generate(db_session, tmp_path, league)
     assert list(dest.parent.iterdir()) == [dest]
+
+
+# -- the hub's own game gets the nodelist, so it sends it to the members ------
+#
+# Generating only wrote the hub-side copy. Members receive a nodelist when the
+# hub's game sends it after its own nodes file changes, so a board added through
+# self-service never reached anyone (prod, Oct 2026: Tentacle BBS in 015).
+
+def _game(tmp_path, league, name=None, content=None):
+    folder = tmp_path / "doors" / f"bre_{league.league_id}"
+    folder.mkdir(parents=True)
+    if name:
+        (folder / name).write_bytes(content if content is not None else b"1 HOST 2\r\nold\r\n")
+    return folder, {league.league_id: {"bre": {"game_folder": str(folder)}}}
+
+
+def _generator(db, tmp_path, dosemu):
+    return NodelistGenerator(db, str(tmp_path / "data"), HUB, dosemu)
+
+
+@pytest.mark.parametrize("name", ["BRNODES.DAT", "brnodes.dat", "BrNodes.Dat"])
+def test_the_game_file_is_rewritten_under_its_own_name(db_session, tmp_path, league, name):
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+    folder, dosemu = _game(tmp_path, league, name)
+
+    generator = _generator(db_session, tmp_path, dosemu)
+    dest = generator.generate(league.id)
+
+    assert [p.name for p in folder.iterdir()] == [name]
+    assert (folder / name).read_bytes() == dest.read_bytes()
+    assert generator.problems == []
+
+
+def test_a_game_with_no_nodes_file_gets_one_in_upper_case(db_session, tmp_path, league):
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+    folder, dosemu = _game(tmp_path, league)
+
+    dest = _generator(db_session, tmp_path, dosemu).generate(league.id)
+
+    assert (folder / "BRNODES.DAT").read_bytes() == dest.read_bytes()
+
+
+def test_an_unchanged_nodelist_leaves_the_game_file_alone(db_session, tmp_path, league):
+    """Processing regenerates after every batch; rewriting each time would make
+    the game resend the same nodelist to everyone on every run."""
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+    folder, dosemu = _game(tmp_path, league)
+    _generator(db_session, tmp_path, dosemu).generate(league.id)
+    game_file = folder / "BRNODES.DAT"
+    old = game_file.stat().st_mtime_ns - 10_000_000_000
+    import os
+    os.utime(game_file, ns=(old, old))
+
+    _generator(db_session, tmp_path, dosemu).generate(league.id)
+
+    assert game_file.stat().st_mtime_ns == old
+
+
+def test_a_new_member_reaches_the_game_file(db_session, tmp_path, league):
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+    folder, dosemu = _game(tmp_path, league)
+    _generator(db_session, tmp_path, dosemu).generate(league.id)
+
+    _member(db_session, league, 6, "Tentacle BBS", "135:135/6")
+    _generator(db_session, tmp_path, dosemu).generate(league.id)
+
+    nodes = NodesFileParser(folder / "BRNODES.DAT")
+    nodes.parse()
+    assert sorted(n.bbs_index for n in nodes.nodes) == [1, 2, 6]
+    assert (folder / "BRNODES.DAT").read_bytes().startswith(b"1 HOST 2 6\r\n")
+
+
+def test_no_game_folder_is_reported_not_fatal(db_session, tmp_path, league):
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+
+    generator = _generator(db_session, tmp_path, {})
+    dest = generator.generate(league.id)
+
+    assert dest.exists()
+    assert len(generator.problems) == 1
+    assert "[dosemu.900.bre] has no game_folder" in generator.problems[0]
+
+
+def test_two_nodes_files_differing_by_case_are_left_alone(db_session, tmp_path, league):
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+    folder, dosemu = _game(tmp_path, league, "BRNODES.DAT", b"upper")
+    (folder / "brnodes.dat").write_bytes(b"lower")
+
+    generator = _generator(db_session, tmp_path, dosemu)
+    generator.generate(league.id)
+
+    assert (folder / "BRNODES.DAT").read_bytes() == b"upper"
+    assert (folder / "brnodes.dat").read_bytes() == b"lower"
+    assert "neither was changed" in generator.problems[0]
+
+
+def test_without_dosemu_config_no_game_is_touched(db_session, tmp_path, league):
+    _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
+    folder, _ = _game(tmp_path, league, "BRNODES.DAT", b"untouched")
+
+    generator = NodelistGenerator(db_session, str(tmp_path / "data"), HUB)
+    generator.generate(league.id)
+
+    assert (folder / "BRNODES.DAT").read_bytes() == b"untouched"
+    assert generator.problems == []

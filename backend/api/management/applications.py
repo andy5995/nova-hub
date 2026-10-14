@@ -263,7 +263,8 @@ async def approve(
             [applications.Grant(g.league_id, g.bbs_index, g.ftn_address) for g in body.grants],
             client_id=body.client_id, bbs_name=body.bbs_name, note=body.note,
             data_dir=config.get("server", {}).get("data_dir", "./data"),
-            hub_config=config.get("hub", {}), request=request,
+            hub_config=config.get("hub", {}), dosemu_config=config.get("dosemu", {}),
+            request=request,
         )
     except applications.Refused as e:
         raise _refused(e)

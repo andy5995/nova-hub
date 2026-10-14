@@ -32,6 +32,13 @@ that generating a nodelist cannot quietly change how a league routes.
 Because a partial nodelist is worse than a stale one, generate() refuses to
 write anything it cannot construct completely and leaves the previous file in
 place.
+
+Writing the file does not reach the members. They get a nodelist one way only:
+the hub's own game sends BRNODES.<league> from its OUTBOUND after its nodes file
+changes, and processing_service.handle_nodelist_file queues that to every member.
+So generate() also puts the nodelist into the hub game's own nodes file, which
+is what an admin used to do by hand. It writes only when the bytes differ, so a
+regeneration that changes nothing does not make the game resend it.
 """
 
 import os
@@ -91,10 +98,16 @@ def _entry(index_line: str, name: str, fidonet: str, city: str, state: str, coun
 class NodelistGenerator:
     """Generate hub-side nodelist files from league membership data."""
 
-    def __init__(self, db: Session, data_dir: str, hub_config: dict | None = None):
+    def __init__(self, db: Session, data_dir: str, hub_config: dict | None = None,
+                 dosemu_config: dict | None = None):
+        """dosemu_config is [dosemu], for each league's game_folder. Without it
+        nothing is written into the hub's games -- tests, and nothing else."""
         self.db = db
         self.data_dir = Path(data_dir)
         self.hub_config = hub_config or {}
+        self.dosemu_config = dosemu_config
+        # Why a generated nodelist did not reach the hub's game, for the admin.
+        self.problems: list[str] = []
 
     def generate(self, league_db_id: int) -> Path | None:
         """
@@ -204,7 +217,54 @@ class NodelistGenerator:
             f"Generated nodelist {filename} for league {league.full_id} "
             f"(hub entry {index_line!r}; {len(members)} member(s))"
         )
+        self._install_in_game(league, game, content)
         return dest
+
+    def _install_in_game(self, league: League, game, content: str) -> None:
+        """Make the hub's own game's nodes file this nodelist, if it is not already.
+
+        The game sends it to the members on its next run (see the module
+        docstring). The file is found case-insensitively and rewritten under
+        its existing name: these are DOS files, and whatever case the install
+        has is the one to keep. Safe while the game runs; it reads the file at
+        startup.
+        """
+        if self.dosemu_config is None:
+            return
+        section = f"[dosemu.{league.league_id}.{game.key}]"
+        settings = self.dosemu_config.get(league.league_id, {})
+        settings = settings.get(game.key, {}) if isinstance(settings, dict) else {}
+        folder = settings.get("game_folder") if isinstance(settings, dict) else None
+        if not folder:
+            self._problem(f"{league.full_id}: {section} has no game_folder, so the hub's game "
+                          "was not given this nodelist and the members will not receive it")
+            return
+        folder = Path(folder)
+        if not folder.is_dir():
+            self._problem(f"{league.full_id}: game_folder {folder} does not exist, so the hub's "
+                          "game was not given this nodelist and the members will not receive it")
+            return
+
+        matches = sorted(p for p in folder.iterdir() if p.name.lower() == game.nodes_file.lower())
+        if len(matches) > 1:
+            self._problem(f"{league.full_id}: {folder} has {', '.join(p.name for p in matches)}; "
+                          "which one the game reads is unclear, so neither was changed")
+            return
+        target = matches[0] if matches else folder / game.nodes_file.upper()
+        if matches and target.read_bytes() == content.encode("utf-8"):
+            return
+
+        try:
+            self._write_atomic(target, content)
+        except OSError as e:
+            self._problem(f"{league.full_id}: could not write {target}: {e}")
+            return
+        logger.info(f"Installed nodelist for league {league.full_id} as {target}; "
+                    "the hub's game sends it to the members on its next run")
+
+    def _problem(self, text: str) -> None:
+        logger.warning(f"generate: {text}")
+        self.problems.append(text)
 
     def _hub_index(self) -> int:
         """The hub's node number. [hub] bbs_index is a string like "01"."""

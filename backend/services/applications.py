@@ -199,7 +199,7 @@ class Approval:
 def approve(db: Session, admin: SysopUser, application: Application, grants: list[Grant],
             client_id: Optional[str] = None, bbs_name: Optional[str] = None,
             note: Optional[str] = None, data_dir: Optional[str] = None,
-            hub_config: Optional[dict] = None,
+            hub_config: Optional[dict] = None, dosemu_config: Optional[dict] = None,
             request: Optional[Request] = None) -> Approval:
     """Approve, granting these leagues. Commits everything, or nothing.
 
@@ -254,7 +254,8 @@ def approve(db: Session, admin: SysopUser, application: Application, grants: lis
         raise
 
     db.refresh(application)
-    problems = regenerate_nodelists(db, [g.league_id for g in grants], data_dir, hub_config)
+    problems = regenerate_nodelists(db, [g.league_id for g in grants], data_dir, hub_config,
+                                    dosemu_config)
     return Approval(application, client, token, link, problems)
 
 
@@ -359,8 +360,11 @@ def _grant(db: Session, client: Client, grant: Grant) -> LeagueMembership:
 
 
 def regenerate_nodelists(db: Session, league_ids: list[int], data_dir: Optional[str],
-                         hub_config: Optional[dict]) -> list[str]:
-    """Regenerate each league's nodelist. Returns why any could not be.
+                         hub_config: Optional[dict],
+                         dosemu_config: Optional[dict] = None) -> list[str]:
+    """Regenerate each league's nodelist, and give it to the hub's game to send.
+
+    Returns why any could not be.
 
     After the approval has committed: a league with no hub address can't get a
     nodelist, which the admin needs to hear, but it is no reason to undo the
@@ -371,7 +375,7 @@ def regenerate_nodelists(db: Session, league_ids: list[int], data_dir: Optional[
     if data_dir is None:
         return []
     problems = []
-    generator = NodelistGenerator(db, data_dir, hub_config or {})
+    generator = NodelistGenerator(db, data_dir, hub_config or {}, dosemu_config)
     for league_id in league_ids:
         league = db.get(League, league_id)
         try:
@@ -380,7 +384,7 @@ def regenerate_nodelists(db: Session, league_ids: list[int], data_dir: Optional[
                                 "hub address, then generate it from the league page")
         except Exception as e:  # noqa: BLE001 -- the approval stands either way
             problems.append(f"{league.full_id}: nodelist generation failed: {e}")
-    return problems
+    return problems + generator.problems
 
 
 # --- the Verify step ---------------------------------------------------------

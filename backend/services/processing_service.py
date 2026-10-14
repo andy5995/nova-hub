@@ -260,7 +260,7 @@ class ProcessingService:
         from backend.services.nodelist_generator import NodelistGenerator
         data_dir = self.config.get("server", {}).get("data_dir", "./data")
         nodelist_gen = NodelistGenerator(
-            self.db, data_dir, self.config.get("hub", {})
+            self.db, data_dir, self.config.get("hub", {}), self.config.get("dosemu", {})
         )
         for (game_type_str, league_id_str) in groups.keys():
             league_obj = (

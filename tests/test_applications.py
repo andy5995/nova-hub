@@ -238,6 +238,32 @@ def test_the_review_suggests_an_id_a_free_index_and_shows_who_holds_what(hub):
 
 # --- approving a join ----------------------------------------------------------
 
+def test_approval_gives_the_new_board_to_the_hubs_game(hub, tmp_path, monkeypatch):
+    """Members get a nodelist only when the hub's game sends it, which it does
+    after its own nodes file changes. Approval used to write just the hub-side
+    copy, so a board added this way never reached anyone."""
+    import backend.api.management.applications as applications_api
+
+    game = tmp_path / "bre_015"
+    game.mkdir()
+    (game / "BrNodes.Dat").write_bytes(b"1 HOST\r\nNova Hub\r\n")
+    config = applications_api.get_config()
+    patched = {"hub": config.get("hub", {}), "server": {"data_dir": str(tmp_path / "data")},
+               "dosemu": {"015": {"bre": {"game_folder": str(game)}}}}
+    monkeypatch.setattr(applications_api, "get_config", lambda: patched)
+
+    application = apply(hub).json()
+    response = approve_join(hub, application["id"])
+    assert response.status_code == 200, response.text
+
+    assert [p.name for p in game.iterdir()] == ["BrNodes.Dat"]
+    nodes = (game / "BrNodes.Dat").read_bytes()
+    assert nodes.startswith(b"1 HOST 5\r\n")  # Eclipse is at the hub's index here
+    assert (tmp_path / "data" / "nodelists" / "bre" / "015" / "BRNODES.015").read_bytes() == nodes
+    # 013F has no hub address, so nothing was generated for it to install.
+    assert not any("game_folder" in p for p in response.json()["nodelist_problems"])
+
+
 def test_approving_a_join_creates_the_bbs_owned_by_the_applicant(hub, tmp_path, monkeypatch):
     application = apply(hub).json()
     response = approve_join(hub, application["id"], bbs_name="Jersey Jam BBS")

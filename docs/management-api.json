@@ -6618,7 +6618,7 @@
     },
     "/api/v1/leagues/{league_id}/generate-nodelist": {
       "post": {
-        "description": "Generate a BRNODES/FENODES nodelist file from the current league membership (admin only).\n\nThe generated file is written to the nodelists directory and made available\nfor download by `nova_client` via the service API.\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Returns:** `{\"filename\": ..., \"members\": <count>}`",
+        "description": "Generate a BRNODES/FENODES nodelist file from the current league membership (admin only).\n\nThe file is written to the nodelists directory, where the console and the\nservice API's bootstrap download serve it, and into the hub's own game as\nits nodes file (only if that changes it). The game sends it to every member\non its next run, as it does when the file is edited by hand.\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Returns:** `{\"filename\": ..., \"members\": <count>, \"warnings\": [...]}`; a\nwarning means the hub's game was not given the nodelist (no `game_folder`,\nsay), so the members will not receive it.",
         "operationId": "generate_nodelist_api_v1_leagues__league_id__generate_nodelist_post",
         "parameters": [
           {

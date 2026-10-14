@@ -2058,13 +2058,17 @@ Validation Error
 
 Generate a BRNODES/FENODES nodelist file from the current league membership (admin only).
 
-The generated file is written to the nodelists directory and made available
-for download by `nova_client` via the service API.
+The file is written to the nodelists directory, where the console and the
+service API's bootstrap download serve it, and into the hub's own game as
+its nodes file (only if that changes it). The game sends it to every member
+on its next run, as it does when the file is edited by hand.
 
 **Path Parameters:**
 - `league_id`: Database ID of the league
 
-**Returns:** `{"filename": ..., "members": <count>}`
+**Returns:** `{"filename": ..., "members": <count>, "warnings": [...]}`; a
+warning means the hub's game was not given the nodelist (no `game_folder`,
+say), so the members will not receive it.
 
 #### Parameters
 
