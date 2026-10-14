@@ -29,7 +29,7 @@ bcrypt==4.0.1
     #   passlib
 beautifulsoup4==4.12.3
     # via nova-hub
-certifi==2026.1.4
+certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
@@ -42,7 +42,7 @@ colorama==0.4.6 ; sys_platform == 'win32'
     #   click
     #   loguru
     #   uvicorn
-cryptography==46.0.3
+cryptography==46.0.5
     # via python-jose
 ecdsa==0.19.1
     # via python-jose
@@ -79,7 +79,7 @@ markupsafe==3.0.3
     # via
     #   jinja2
     #   mako
-multidict==6.7.0
+multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
@@ -89,11 +89,11 @@ propcache==0.4.1
     # via
     #   aiohttp
     #   yarl
-pyasn1==0.6.1
+pyasn1==0.6.2
     # via
     #   python-jose
     #   rsa
-pycparser==2.23 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
 pydantic==2.12.5
     # via
@@ -121,7 +121,7 @@ six==1.17.0
     # via ecdsa
 sniffio==1.3.1
     # via httpx
-soupsieve==2.8.1
+soupsieve==2.8.3
     # via beautifulsoup4
 sqlalchemy==2.0.36
     # via
@@ -155,7 +155,7 @@ watchdog==6.0.0
     # via nova-hub
 watchfiles==1.1.1
     # via uvicorn
-websockets==15.0.1
+websockets==16.0
     # via uvicorn
 win32-setctime==1.2.0 ; sys_platform == 'win32'
     # via loguru

@@ -4,6 +4,15 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-14
+
+### Changed
+- **The lock no longer downgrades production.** 0.7.0's lock was seeded from
+  the dev venv, which was behind production on seven packages. They are now
+  locked at production's versions: certifi 2026.7.22, cryptography 46.0.5,
+  multidict 6.7.1, pyasn1 0.6.2, pycparser 3.0, soupsieve 2.8.3, websockets
+  16.0. 0.7.0 was never deployed.
+
 ## [0.7.0] - 2026-10-14
 
 ### Fixed
