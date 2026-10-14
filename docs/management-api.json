@@ -22,6 +22,7 @@
           "details": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -2430,6 +2431,7 @@
           "available_clients": {
             "default": [],
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "title": "Available Clients",
@@ -3749,6 +3751,7 @@
       "TrafficDetails": {
         "properties": {
           "details": {
+            "additionalProperties": true,
             "title": "Details",
             "type": "object"
           },

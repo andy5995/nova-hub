@@ -13,6 +13,9 @@ All notable changes to Nova Hub will be documented in this file.
   paths: the hub keeps only its hash. Downloading changes nothing.
 
 ### Changed
+- **FastAPI 0.128.0, Pydantic 2.12.5, pydantic-settings 2.12.0** (were
+  0.115.0, 2.10.0, 2.6.0). Deploying needs `uv pip install -r
+  requirements.txt` before the restart.
 - **API docs are split per API and kept current.** `docs/API.md` and
   `docs/openapi.json` mixed both APIs in one file with one shared schema
   list, and had not been regenerated since 0.5.0. `export_api_docs.py` now

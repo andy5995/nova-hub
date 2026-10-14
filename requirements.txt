@@ -1,7 +1,7 @@
 # requirements.txt - Complete
 
 # Core
-fastapi==0.115.0
+fastapi==0.128.0
 uvicorn[standard]==0.32.0
 sqlalchemy==2.0.36
 alembic==1.13.1
@@ -24,8 +24,8 @@ bcrypt==4.0.1  # Pin bcrypt version for passlib compatibility
 # Config
 toml==0.10.2
 python-dotenv==1.0.1
-pydantic==2.10.0
-pydantic-settings==2.6.0
+pydantic==2.12.5
+pydantic-settings==2.12.0
 
 # File watching
 watchdog==6.0.0
