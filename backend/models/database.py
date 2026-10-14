@@ -20,6 +20,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    text,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship
@@ -578,6 +579,51 @@ class LeagueGameSettings(Base):
     lost_attack_days = Column(Integer, nullable=True)
     packet_id = Column(Integer, ForeignKey("packets.id"), nullable=True)
     seen_at = Column(DateTime, nullable=True)
+
+
+class GameReset(Base):
+    """One reset of a league's game: a draft, one under way, or one done.
+
+    Drafted and performed from the console (backend/services/game_reset/).
+    `settings` is keyed by the field ids in game_reset/fields.py. A league has
+    at most one draft. Every reset is league-wide.
+
+    A reset's end is the next applied reset's `applied_at`; it is worked out
+    when read, never stored, so it cannot go stale.
+    """
+
+    __tablename__ = "game_resets"
+
+    __table_args__ = (
+        Index("uq_game_resets_one_draft", "league_id", unique=True,
+              sqlite_where=text("status = 'draft'")),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False, index=True)
+    status = Column(String(10), nullable=False, default="draft")  # draft/applying/applied/failed
+    source = Column(String(10), nullable=False, default="console")  # console/observed
+    settings = Column(JSON, nullable=False)
+    notes = Column(Text, nullable=True)
+    # Bumped on every save; a save must name the version it edited.
+    version = Column(Integer, nullable=False, default=1)
+
+    created_by = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_by = Column(String(50), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    applied_by = Column(String(50), nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    game_start = Column(DateTime, nullable=True)
+
+    # Filled in by the driver.
+    backup_path = Column(String(255), nullable=True)
+    transcript = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    # The Configupdate the hub sent afterwards, decoded.
+    sent_config = Column(JSON, nullable=True)
+
+    league = relationship("League")
 
 
 class ProcessingRunFile(Base):

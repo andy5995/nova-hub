@@ -338,6 +338,81 @@ export const leaguesApi = {
     api.patch(`/leagues/${leagueId}/members/${membershipId}`, data)
 }
 
+// Game reset: the form (every setting the game's reset editor offers, with
+// its help) and the league's one draft. See backend/services/game_reset/.
+export type ResetValue = number | string | boolean | null
+
+export interface ResetField {
+  id: string
+  label: string
+  page: number
+  group: string
+  kind: 'number' | 'choice' | 'toggle' | 'date'
+  default: ResetValue
+  min: number | null
+  max: number | null
+  choices: { letter: string; name: string }[]
+  interbbs: boolean
+  min_reason: string | null
+  note: string | null
+  admin_note: string | null
+  depends_on: [string, ResetValue] | null
+  help_title: string
+  help: string
+}
+
+export interface ResetDraft {
+  id: number
+  version: number
+  settings: Record<string, ResetValue>
+  notes: string | null
+  created_by: string | null
+  created_at: string | null
+  updated_by: string | null
+  updated_at: string | null
+}
+
+export interface GameResetForm {
+  league_id: number
+  full_id: string
+  game_type: string
+  fields: ResetField[]
+  defaults: Record<string, ResetValue>
+  league_wide_help: string
+  draft: ResetDraft | null
+  last_applied: {
+    id: number
+    settings: Record<string, ResetValue>
+    applied_by: string | null
+    applied_at: string | null
+    game_start: string | null
+  } | null
+  observed: {
+    game_started_at: string | null
+    protection_turns: number | null
+    indiv_attacks: number | null
+    lost_attack_days: number | null
+    seen_at: string | null
+  } | null
+}
+
+export const gameResetApi = {
+  form: (leagueId: number) =>
+    api.get<GameResetForm>(`/leagues/${leagueId}/reset`),
+
+  // `version` is the draft version being edited; leave it out for a new draft.
+  // 409 means someone else saved in between; 422 lists each failing field.
+  saveDraft: (leagueId: number, body: {
+    settings: Record<string, ResetValue>
+    notes?: string | null
+    version?: number | null
+  }) =>
+    api.put<GameResetForm>(`/leagues/${leagueId}/reset/draft`, body),
+
+  discardDraft: (leagueId: number) =>
+    api.delete<GameResetForm>(`/leagues/${leagueId}/reset/draft`)
+}
+
 // Processing API functions
 export const processingApi = {
   listRuns: (limit = 50) =>

@@ -222,6 +222,9 @@ async function handleDelete() {
             </p>
           </div>
           <div v-if="authStore.isAdmin" class="actions">
+            <router-link :to="`/leagues/${leagueId}/reset`" class="btn btn-secondary">
+              Game reset
+            </router-link>
             <button class="btn btn-secondary" @click="openEditModal">Edit</button>
             <button
               class="btn"

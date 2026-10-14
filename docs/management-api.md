@@ -39,6 +39,7 @@ Uses session-based JWT stored in httpOnly cookies.
 - [Management API - Claim Links](#management-api---claim-links)
 - [Management API - Clients](#management-api---clients)
 - [Management API - Dashboard](#management-api---dashboard)
+- [Management API - Game Reset](#management-api---game-reset)
 - [Management API - Leagues](#management-api---leagues)
 - [Management API - Movements](#management-api---movements)
 - [Management API - Processing](#management-api---processing)
@@ -1736,6 +1737,106 @@ curl -X GET "https://hub.example.com/management/api/v1/dashboard" \
 #### 200
 
 Successful Response
+
+
+**Content-Type:** `application/json`
+
+---
+
+## Management API - Game Reset
+
+### GET `/management/api/v1/leagues/{league_id}/reset`
+
+**Get the Game Reset Form**
+
+Every setting the game's reset editor offers, in the editor's order, with
+the game's own help, its default and our limits; the league's draft, if any;
+the settings of the last reset performed from the console; and what the hub
+last decoded from the league's Configupdate.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### PUT `/management/api/v1/leagues/{league_id}/reset/draft`
+
+**Save the Game Reset Draft**
+
+Check every setting against the game's limits and save the league's draft.
+
+Answers 422 listing each field that fails, and 409 when someone else saved the
+draft since `version` was loaded. Fields left out take the game's defaults.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### DELETE `/management/api/v1/leagues/{league_id}/reset/draft`
+
+**Discard the Game Reset Draft**
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
 
 
 **Content-Type:** `application/json`

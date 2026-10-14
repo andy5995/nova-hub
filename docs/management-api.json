@@ -2100,6 +2100,78 @@
         "title": "FtnAddressRequest",
         "type": "object"
       },
+      "GameResetForm": {
+        "properties": {
+          "defaults": {
+            "additionalProperties": true,
+            "title": "Defaults",
+            "type": "object"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResetDraft"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ResetField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "full_id": {
+            "title": "Full Id",
+            "type": "string"
+          },
+          "game_type": {
+            "title": "Game Type",
+            "type": "string"
+          },
+          "last_applied": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResetApplied"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "league_id": {
+            "title": "League Id",
+            "type": "integer"
+          },
+          "league_wide_help": {
+            "title": "League Wide Help",
+            "type": "string"
+          },
+          "observed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObservedSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "league_id",
+          "full_id",
+          "game_type",
+          "fields",
+          "defaults",
+          "league_wide_help"
+        ],
+        "title": "GameResetForm",
+        "type": "object"
+      },
       "Grant": {
         "properties": {
           "bbs_index": {
@@ -3199,6 +3271,68 @@
         "title": "NodelistInfo",
         "type": "object"
       },
+      "ObservedSettings": {
+        "description": "What the hub last decoded from the league's Configupdate (BRE only, so far).",
+        "properties": {
+          "game_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Game Started At"
+          },
+          "indiv_attacks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indiv Attacks"
+          },
+          "lost_attack_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lost Attack Days"
+          },
+          "protection_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protection Turns"
+          },
+          "seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seen At"
+          }
+        },
+        "title": "ObservedSettings",
+        "type": "object"
+      },
       "OwnedClient": {
         "description": "A BBS the user owns",
         "properties": {
@@ -3717,6 +3851,322 @@
           "has_sign_in"
         ],
         "title": "RelinkPageStatus",
+        "type": "object"
+      },
+      "ResetApplied": {
+        "properties": {
+          "applied_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied At"
+          },
+          "applied_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied By"
+          },
+          "game_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Game Start"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "settings"
+        ],
+        "title": "ResetApplied",
+        "type": "object"
+      },
+      "ResetChoice": {
+        "properties": {
+          "letter": {
+            "title": "Letter",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "letter",
+          "name"
+        ],
+        "title": "ResetChoice",
+        "type": "object"
+      },
+      "ResetDraft": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "settings"
+        ],
+        "title": "ResetDraft",
+        "type": "object"
+      },
+      "ResetDraftSave": {
+        "properties": {
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The draft version being edited; omit when starting a new draft",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "title": "ResetDraftSave",
+        "type": "object"
+      },
+      "ResetField": {
+        "description": "One setting, as the reset editor offers it, with the game's own help.",
+        "properties": {
+          "admin_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Note"
+          },
+          "choices": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResetChoice"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "default": {
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "[field id, value]: only asked when that field has that value",
+            "title": "Depends On"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "help_title": {
+            "title": "Help Title",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interbbs": {
+            "default": false,
+            "title": "Interbbs",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "number, choice, toggle or date",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "min_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Reason"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "page",
+          "group",
+          "kind",
+          "help_title",
+          "help"
+        ],
+        "title": "ResetField",
         "type": "object"
       },
       "TakenIndex": {
@@ -6860,6 +7310,142 @@
         "summary": "Download Nodelist",
         "tags": [
           "Management API - Leagues"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/reset": {
+      "get": {
+        "description": "Every setting the game's reset editor offers, in the editor's order, with\nthe game's own help, its default and our limits; the league's draft, if any;\nthe settings of the last reset performed from the console; and what the hub\nlast decoded from the league's Configupdate.",
+        "operationId": "get_reset_form_api_v1_leagues__league_id__reset_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameResetForm"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get the Game Reset Form",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/reset/draft": {
+      "delete": {
+        "operationId": "discard_reset_draft_api_v1_leagues__league_id__reset_draft_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameResetForm"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard the Game Reset Draft",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      },
+      "put": {
+        "description": "Check every setting against the game's limits and save the league's draft.\n\nAnswers 422 listing each field that fails, and 409 when someone else saved the\ndraft since `version` was loaded. Fields left out take the game's defaults.",
+        "operationId": "save_reset_draft_api_v1_leagues__league_id__reset_draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetDraftSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameResetForm"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save the Game Reset Draft",
+        "tags": [
+          "Management API - Game Reset"
         ]
       }
     },

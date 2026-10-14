@@ -21,6 +21,7 @@ from .dashboard import router as dashboard_router
 from .applications import router as applications_router
 from .clients import router as clients_router
 from .leagues import router as leagues_router
+from .game_reset import router as game_reset_router
 from .movements import router as movements_router
 from .processing import router as processing_router
 from .alerts import router as alerts_router
@@ -71,6 +72,12 @@ management_router.include_router(
     leagues_router,
     prefix="/leagues",
     tags=["Management API - Leagues"]
+)
+
+management_router.include_router(
+    game_reset_router,
+    prefix="/leagues",
+    tags=["Management API - Game Reset"]
 )
 
 management_router.include_router(
