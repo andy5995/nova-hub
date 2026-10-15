@@ -396,6 +396,39 @@ export interface GameResetForm {
     lost_attack_days: number | null
     seen_at: string | null
   } | null
+  under_way: ResetDetail | null
+}
+
+// One row of a league's reset history. `source` is 'observed' for a reset
+// only seen in a Game Start packet, not performed from the console.
+export interface ResetSummary {
+  id: number
+  status: 'applying' | 'applied' | 'failed'
+  source: 'console' | 'observed'
+  settings: Record<string, ResetValue>
+  notes: string | null
+  applied_by: string | null
+  applied_at: string | null
+  game_start: string | null
+  ended: string | null
+  error: string | null
+  confirmed: boolean | null
+  mismatches: string[]
+}
+
+export interface ResetDetail extends ResetSummary {
+  progress: { stage: string; at: string }[]
+  warnings: { field: string; message: string }[]
+  transcript: string | null
+  backup_path: string | null
+  processing_run_id: number | null
+  sent_config: Record<string, ResetValue | string[]> | null
+  members: {
+    bbs_index: string
+    bbs_name: string | null
+    filename: string
+    downloaded_at: string | null
+  }[]
 }
 
 export const gameResetApi = {
@@ -412,7 +445,18 @@ export const gameResetApi = {
     api.put<GameResetForm>(`/leagues/${leagueId}/reset/draft`, body),
 
   discardDraft: (leagueId: number) =>
-    api.delete<GameResetForm>(`/leagues/${leagueId}/reset/draft`)
+    api.delete<GameResetForm>(`/leagues/${leagueId}/reset/draft`),
+
+  // `confirm` is the league code typed by hand. 202 with the reset under way;
+  // 409 when another is running or the draft changed, 422 when refused.
+  perform: (leagueId: number, body: { version: number; confirm: string }) =>
+    api.post<ResetDetail>(`/leagues/${leagueId}/reset/perform`, body),
+
+  history: (leagueId: number) =>
+    api.get<ResetSummary[]>(`/leagues/${leagueId}/resets`),
+
+  reset: (leagueId: number, resetId: number) =>
+    api.get<ResetDetail>(`/leagues/${leagueId}/resets/${resetId}`)
 }
 
 // Processing API functions

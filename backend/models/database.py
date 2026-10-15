@@ -622,6 +622,12 @@ class GameReset(Base):
     error = Column(Text, nullable=True)
     # The Configupdate the hub sent afterwards, decoded.
     sent_config = Column(JSON, nullable=True)
+    # Where a reset under way has got to: [{"stage": ..., "at": iso time}, ...].
+    progress = Column(JSON, nullable=True)
+    # The id of the PLANETARY run that sent the league its Game Start. Not a
+    # declared foreign key: SQLite can only add one by rebuilding the table, and
+    # a rebuild risks the one-draft index's WHERE clause.
+    processing_run_id = Column(Integer, nullable=True)
 
     league = relationship("League")
 

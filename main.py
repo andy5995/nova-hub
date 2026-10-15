@@ -51,6 +51,17 @@ async def lifespan(app: FastAPI):
     # Note: Run migrations manually with: alembic upgrade head
     # Automatic migrations disabled to prevent startup hangs
 
+    # A game reset can't survive a restart: settle any left half-done, putting
+    # the game back if the hub stopped with its editor open.
+    from backend.services.game_reset.perform import recover
+    recovery_db = get_session()
+    try:
+        recover(recovery_db, config._raw)
+    except Exception as e:
+        logger.exception(f"Could not settle interrupted game resets: {e}")
+    finally:
+        recovery_db.close()
+
     # Start packet watcher for hub-generated outbound packets
     from backend.services.packet_service import PacketService
     from backend.services.packet_watcher import WatcherService

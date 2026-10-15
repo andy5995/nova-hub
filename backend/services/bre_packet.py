@@ -288,6 +288,7 @@ def attacks(packet: bytes) -> List[Attack]:
 # u16 words. Located by changing them in BRE EDITOR on the rig (protection
 # 20 -> 0, attacks/day 1 -> 10, lost-attack days 7 -> 1) and diffing the record.
 CONFIG_UPDATE = 0x0A
+GAME_START = 0x10       # the Configupdate's layout; see RECORD_TYPES
 
 
 @dataclass
@@ -299,8 +300,9 @@ class LeagueSettings:
 
 
 def league_settings(record: Record) -> LeagueSettings:
+    """The settings in a Configupdate, or in a Game Start, which shares its layout."""
     d = record.data
-    if record.type != CONFIG_UPDATE or len(d) < 34:
+    if record.type not in (CONFIG_UPDATE, GAME_START) or len(d) < 34:
         raise PacketFormatError(f"{record.name} is not a Configupdate")
     w = struct.unpack_from("<17H", d, 0)
     try:

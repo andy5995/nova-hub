@@ -824,6 +824,7 @@ dependencies = [
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-multipart" },
     { name = "sqlalchemy" },
+    { name = "sr-harness" },
     { name = "toml" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchdog" },
@@ -833,7 +834,6 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "sr-harness" },
 ]
 
 [package.metadata]
@@ -855,6 +855,7 @@ requires-dist = [
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.3.0" },
     { name = "python-multipart", specifier = ">=0.0.17" },
     { name = "sqlalchemy", specifier = ">=2.0.36" },
+    { name = "sr-harness", git = "https://gitea-hl.taild204f.ts.net/lime/sr-harness.git?rev=v0.1.1" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
     { name = "watchdog", specifier = ">=6.0.0" },
@@ -864,7 +865,6 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
-    { name = "sr-harness", git = "https://gitea-hl.taild204f.ts.net/lime/sr-harness.git?rev=v0.1.1" },
 ]
 
 [[package]]

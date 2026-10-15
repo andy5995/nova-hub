@@ -104,6 +104,8 @@ pydantic-core==2.41.5
     # via pydantic
 pydantic-settings==2.12.0
     # via nova-hub
+pyte==0.8.2
+    # via sr-harness
 python-dotenv==1.0.1
     # via
     #   nova-hub
@@ -127,6 +129,8 @@ sqlalchemy==2.0.36
     # via
     #   alembic
     #   nova-hub
+sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@f892a3847c3a07a6b6963a62d755e67e708cb8ba
+    # via nova-hub
 starlette==0.50.0
     # via fastapi
 toml==0.10.2
@@ -155,6 +159,8 @@ watchdog==6.0.0
     # via nova-hub
 watchfiles==1.1.1
     # via uvicorn
+wcwidth==0.2.14
+    # via pyte
 websockets==16.0
     # via uvicorn
 win32-setctime==1.2.0 ; sys_platform == 'win32'

@@ -42,16 +42,15 @@ dependencies = [
     "ansi2html>=1.9.1",
     # HTML parsing
     "beautifulsoup4>=4.12.3",
+    # Drives the game's own reset editor (backend/services/game_reset/). The
+    # live rig installs the same tag from tests/live/requirements.txt.
+    "sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@v0.1.1",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.24.0",
-    # For rig.dospath: the 8.3 guard test uses it, and the live tree imports it
-    # while being collected (and then skipped). Keep the tag the same as in
-    # tests/live/requirements.txt, which the rig venv installs from.
-    "sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@v0.1.1",
 ]
 
 [tool.uv]

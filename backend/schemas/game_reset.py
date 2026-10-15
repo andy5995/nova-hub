@@ -1,4 +1,4 @@
-"""Schemas for drafting a game reset. The settings themselves are a plain
+"""Schemas for drafting, performing and looking back on a game reset. The settings themselves are a plain
 mapping keyed by field id; game_reset/fields.py says what each one may hold."""
 from typing import Any, Dict, List, Optional
 
@@ -67,6 +67,55 @@ class ObservedSettings(BaseModel):
     seen_at: Optional[str] = None
 
 
+class ResetStep(BaseModel):
+    stage: str = Field(description="queued, lock, backup, editor, saved, processing, "
+                                   "sent; or restored, failed, interrupted")
+    at: str
+
+
+class ResetMember(BaseModel):
+    """One packet the reset's processing run wrote, and whether its BBS has it."""
+    bbs_index: str
+    bbs_name: Optional[str] = None
+    filename: str
+    downloaded_at: Optional[str] = None
+
+
+class ResetSummary(BaseModel):
+    """One row of a league's reset history."""
+    id: int
+    status: str = Field(description="applying, applied or failed")
+    source: str = Field(description="console, or observed: seen in a Game Start "
+                                    "packet, not performed from here")
+    settings: Dict[str, Any]
+    notes: Optional[str] = None
+    applied_by: Optional[str] = None
+    applied_at: Optional[str] = None
+    game_start: Optional[str] = None
+    ended: Optional[str] = Field(None, description="The next reset's game start; "
+                                                   "null for the game being played")
+    error: Optional[str] = None
+    confirmed: Optional[bool] = Field(
+        None, description="True once a Game Start agreeing with the settings went "
+                          "out; false if it disagreed; null until one is seen")
+    mismatches: List[str] = []
+
+
+class ResetDetail(ResetSummary):
+    progress: List[ResetStep] = []
+    warnings: List[ResetWarning] = []
+    transcript: Optional[str] = None
+    backup_path: Optional[str] = None
+    processing_run_id: Optional[int] = None
+    sent_config: Optional[Dict[str, Any]] = None
+    members: List[ResetMember] = []
+
+
+class ResetPerform(BaseModel):
+    version: int = Field(description="The draft version being performed")
+    confirm: str = Field(description="The league's code, typed by hand (for example 015B)")
+
+
 class GameResetForm(BaseModel):
     league_id: int
     full_id: str
@@ -77,6 +126,8 @@ class GameResetForm(BaseModel):
     draft: Optional[ResetDraft] = None
     last_applied: Optional[ResetApplied] = None
     observed: Optional[ObservedSettings] = None
+    under_way: Optional[ResetDetail] = Field(
+        None, description="The league's reset in progress, if one is")
 
 
 class ResetDraftSave(BaseModel):

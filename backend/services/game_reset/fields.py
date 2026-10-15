@@ -19,7 +19,8 @@ Things the editor does that the table encodes:
   `choices` lists only what the editor accepts (no None on Attack Damage).
 - Sabre Constant asks a second question, a dial from 0 to 10; that is the
   dependent field `sabre_dial`.
-- Dates are a date only; the time of day is the moment of the reset.
+- Dates are a date only. A typed date starts at 00:00; RESET itself stamps
+  Start Date with the moment of the reset, so a blank one is left alone.
 """
 from dataclasses import dataclass, replace
 from typing import Optional
@@ -79,9 +80,9 @@ def _toggle(id, label, page, group, default, **kw):
 
 
 _START = dict(
-    note="A date only: the editor asks for no time, and the game starts at the "
-         "moment of the reset on that day. Leave it blank to start on the day of "
-         "the reset. A later date lets players join now but not play until then.",
+    note="A date only: the editor asks for no time. Leave it blank to start at "
+         "the moment of the reset. A later date starts at midnight that day, and "
+         "lets players join now but not play until then.",
 )
 _JOIN = dict(note="Leave at 01/01/2999 for no cut-off.")
 _TURNS = dict(advised_min=1, advised_reason="0 turns means nobody can play.")

@@ -84,6 +84,10 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
             added += 1
         elif rec.type == bre_packet.CONFIG_UPDATE:
             _remember_settings(db, league, packet, bre_packet.league_settings(rec))
+        elif rec.type == bre_packet.GAME_START:
+            # A league-wide reset going out: the league's reset history.
+            from backend.services.game_reset.history import record_game_start
+            record_game_start(db, league, packet, bre_packet.league_settings(rec))
         elif rec.type in bre_packet.TRAFFIC_TYPES:
             t = bre_packet.traffic(rec)
             if t is None:

@@ -1,16 +1,20 @@
 <script setup lang="ts">
-// Drafting a league's game reset. Every setting the game's reset editor
-// offers, in the editor's order, with the game's own help always visible.
-// The hub keeps one draft per league; performing it comes in a later release.
-// The server checks everything again: the driver will type these values into
-// the game, and an out-of-range one would throw it out of step.
+// A league's game reset. Every setting the game's reset editor offers, in the
+// editor's order, with the game's own help always visible. The hub keeps one
+// draft per league; PERFORM RESET hands the saved draft to the hub, which types
+// it into the game's own editor. The server checks everything again: an
+// out-of-range value would throw that driver out of step.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import ResetHistory from '@/components/ResetHistory.vue'
+import ResetPerformDialog from '@/components/ResetPerformDialog.vue'
+import ResetProgress from '@/components/ResetProgress.vue'
 import {
   apiError,
   gameResetApi,
   type GameResetForm,
+  type ResetDetail,
   type ResetField,
   type ResetValue
 } from '@/services/api'
@@ -28,6 +32,9 @@ const saving = ref(false)
 const error = ref('')
 const message = ref('')
 const serverErrors = ref<Record<string, string>>({})
+const performing = ref(false) // the confirmation dialog is open
+const progressId = ref<number | null>(null) // the reset shown in the progress card
+const historyKey = ref(0)
 
 const GROUPS = [
   { id: 'General', title: 'General' },
@@ -50,14 +57,17 @@ const dirty = computed(() => form.value !== null && snapshot() !== saved.value)
 
 function load(data: GameResetForm) {
   form.value = data
+  if (data.under_way) progressId.value = data.under_way.id
   values.value = { ...data.defaults, ...(data.draft?.settings ?? {}) }
   notes.value = data.draft?.notes ?? ''
   saved.value = snapshot()
   serverErrors.value = {}
 }
 
-async function fetchForm() {
-  loading.value = true
+// `quiet` refreshes in place, without the loading screen that would take the
+// progress card with it.
+async function fetchForm(quiet = false) {
+  if (!quiet) loading.value = true
   error.value = ''
   try {
     const { data } = await gameResetApi.form(leagueId.value)
@@ -205,6 +215,35 @@ function formatTime(iso: string | null): string {
   return new Date(iso + (iso.endsWith('Z') ? '' : 'Z')).toLocaleString()
 }
 
+// Why PERFORM RESET can't be pressed, or '' when it can.
+const performBlocked = computed(() => {
+  if (!form.value) return 'Loading'
+  if (form.value.under_way) return 'A reset of this league is under way.'
+  if (!form.value.draft) return 'Save a draft first: a reset performs the saved draft.'
+  if (dirty.value) return 'Save or undo your changes first: a reset performs the saved draft.'
+  if (problems.value) return 'Fix the settings marked below first.'
+  return ''
+})
+
+function onPerformed(reset: ResetDetail) {
+  performing.value = false
+  message.value = ''
+  progressId.value = reset.id
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  fetchForm(true)
+  historyKey.value++
+}
+
+function onFinished() {
+  fetchForm(true)
+  historyKey.value++
+}
+
+function openReset(id: number) {
+  progressId.value = id
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
 function warnOnUnload(e: BeforeUnloadEvent) {
   if (dirty.value) {
     e.preventDefault()
@@ -256,9 +295,17 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
 
         <div class="alert alert-warning mb-4">
           A reset wipes every player on every board in the league and starts a new
-          game with these settings. For now you can only draft it: performing the
-          reset from here is coming in the next release.
+          game with these settings. Save the draft, then PERFORM RESET: the hub backs
+          up its game, types the settings into the game's own reset editor, checks
+          both pages, and puts the game back as it was if anything doesn't match.
         </div>
+
+        <ResetProgress
+          v-if="progressId !== null"
+          :league-id="leagueId"
+          :reset-id="progressId"
+          @finished="onFinished"
+        />
 
         <div class="toolbar card mb-4">
           <div class="card-body toolbar-body">
@@ -300,6 +347,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
                 @click="save"
               >
                 {{ saving ? 'Saving...' : 'Save draft' }}
+              </button>
+              <button
+                class="btn btn-danger btn-sm perform"
+                :disabled="!!performBlocked"
+                :title="performBlocked"
+                @click="performing = true"
+              >
+                PERFORM RESET
               </button>
             </div>
           </div>
@@ -413,6 +468,20 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
             ></textarea>
           </div>
         </section>
+
+        <ResetHistory
+          :league-id="leagueId"
+          :fields="form.fields"
+          :refresh-key="historyKey"
+          @open="openReset"
+        />
+
+        <ResetPerformDialog
+          v-if="performing && form.draft"
+          :form="form"
+          @close="performing = false"
+          @performed="onPerformed"
+        />
       </template>
     </div>
   </AppLayout>
@@ -481,6 +550,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.perform {
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 .fields {

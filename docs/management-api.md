@@ -1846,6 +1846,118 @@ Validation Error
 
 ---
 
+### POST `/management/api/v1/leagues/{league_id}/reset/perform`
+
+**Perform the Game Reset**
+
+Reset the league's game with its draft. **Every player on every board in
+the league is wiped** once members run the Game Start this sends.
+
+The draft must be at `version`, and `confirm` must be the league's code. The
+hub then backs up the game, types the draft into the game's own reset
+editor, checks every setting on both pages, and saves it as a league-wide
+reset; a PLANETARY run then sends the Game Start. Anything unexpected before
+the save puts the game back as it was and returns the settings to the draft.
+
+Answers 202 at once with the reset under way; follow it with
+`GET /leagues/{id}/resets/{reset_id}`. 409 when another reset is running or
+the draft changed; 422 when the code is wrong, the draft no longer passes,
+or the game isn't where config.toml says.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 202
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### GET `/management/api/v1/leagues/{league_id}/resets`
+
+**List the League's Resets**
+
+Every reset of the league, newest first: those performed from the console,
+including failed ones, and (BRE) those only seen in a Game Start packet.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### GET `/management/api/v1/leagues/{league_id}/resets/{reset_id}`
+
+**Get One Reset**
+
+One reset with its progress, the driver's log, and which members have
+downloaded the packets that carry it.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+**reset_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ## Management API - Leagues
 
 ### GET `/management/api/v1/leagues`

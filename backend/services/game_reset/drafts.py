@@ -110,8 +110,11 @@ def current_draft(db: Session, league: League) -> Optional[GameReset]:
 
 
 def last_applied(db: Session, league: League) -> Optional[GameReset]:
+    """The last reset performed from the console. An observed one (history.py)
+    knows only three of the settings, so it can't stand in for a full set."""
     return (db.query(GameReset)
-            .filter(GameReset.league_id == league.id, GameReset.status == "applied")
+            .filter(GameReset.league_id == league.id, GameReset.status == "applied",
+                    GameReset.source == "console")
             .order_by(GameReset.applied_at.desc())
             .first())
 

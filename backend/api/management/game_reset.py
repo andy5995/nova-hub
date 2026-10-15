@@ -1,7 +1,8 @@
-"""Drafting a league's game reset: the form, with every setting's help, and the
-league's one saved draft. Performing it comes later. See backend/services/game_reset/."""
+"""A league's game reset: the form, with every setting's help; the league's one
+saved draft; performing it; and the league's reset history. See
+backend/services/game_reset/."""
 from datetime import date, datetime
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -9,13 +10,17 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db
 from backend.core.security import require_admin
 from backend.logging_config import get_logger
-from backend.models.database import League, LeagueGameSettings, SysopUser
+from backend.core.config import get_config
+from backend.models.database import (
+    GameReset, League, LeagueGameSettings, LeagueMembership, Packet, SysopUser,
+)
 from backend.schemas.game_reset import (
-    GameResetForm, ObservedSettings, ResetApplied, ResetChoice, ResetDraft,
-    ResetDraftSave, ResetField, ResetWarning,
+    GameResetForm, ObservedSettings, ResetApplied, ResetChoice, ResetDetail,
+    ResetDraft, ResetDraftSave, ResetField, ResetMember, ResetPerform, ResetStep,
+    ResetSummary, ResetWarning,
 )
 from backend.services import audit
-from backend.services.game_reset import drafts
+from backend.services.game_reset import drafts, history, perform
 from backend.services.game_reset.fields import LEAGUE_WIDE_HELP, defaults, fields_for
 
 router = APIRouter()
@@ -44,8 +49,49 @@ def _draft(d, game_type: str) -> Optional[ResetDraft]:
                       updated_by=d.updated_by, updated_at=_iso(d.updated_at))
 
 
+def _summary(r: GameReset, ended: Optional[datetime] = None) -> dict:
+    sent = r.sent_config or {}
+    wrong = sent.get("mismatches", [])
+    return dict(
+        id=r.id, status=r.status, source=r.source, settings=r.settings, notes=r.notes,
+        applied_by=r.applied_by, applied_at=_iso(r.applied_at),
+        game_start=_iso(r.game_start), ended=_iso(ended), error=r.error,
+        confirmed=None if r.source != "console" or not sent else not wrong,
+        mismatches=wrong)
+
+
+def _members(db: Session, league: League, run_id: Optional[int]) -> List[ResetMember]:
+    if run_id is None:
+        return []
+    names = {f"{m.bbs_index:02X}": m.client.bbs_name for m in
+             db.query(LeagueMembership).filter(LeagueMembership.league_id == league.id)
+             if m.bbs_index is not None and m.client is not None}
+    packets = (db.query(Packet)
+               .filter(Packet.league_id == league.id, Packet.processing_run_id == run_id)
+               .order_by(Packet.dest_bbs_index).all())
+    return [ResetMember(bbs_index=p.dest_bbs_index, bbs_name=names.get(p.dest_bbs_index.upper()),
+                        filename=p.filename, downloaded_at=_iso(p.downloaded_at))
+            for p in packets]
+
+
+def _detail(db: Session, league: League, r: GameReset,
+            ended: Optional[datetime] = None) -> ResetDetail:
+    return ResetDetail(
+        **_summary(r, ended),
+        progress=[ResetStep(**p) for p in r.progress or []],
+        warnings=[ResetWarning(field=f, message=m)
+                  for f, m in drafts.warnings(league.game_type, r.settings)]
+        if r.source == "console" else [],
+        transcript=r.transcript, backup_path=r.backup_path,
+        processing_run_id=r.processing_run_id, sent_config=r.sent_config,
+        members=_members(db, league, r.processing_run_id))
+
+
 def _form(db: Session, league: League) -> GameResetForm:
     applied = drafts.last_applied(db, league)
+    under_way = (db.query(GameReset)
+                 .filter(GameReset.league_id == league.id, GameReset.status == "applying")
+                 .first())
     seen = db.query(LeagueGameSettings).filter(
         LeagueGameSettings.league_id == league.id).first()
     return GameResetForm(
@@ -73,6 +119,7 @@ def _form(db: Session, league: League) -> GameResetForm:
             indiv_attacks=seen.indiv_attacks_per_day,
             lost_attack_days=seen.lost_attack_days,
             seen_at=_iso(seen.seen_at)),
+        under_way=None if under_way is None else _detail(db, league, under_way),
     )
 
 
@@ -145,3 +192,71 @@ async def discard_reset_draft(
     db.commit()
     logger.info(f"Reset draft for {league.full_id} discarded by {current_user.username}")
     return _form(db, league)
+
+
+@router.post("/{league_id}/reset/perform", response_model=ResetDetail, status_code=202,
+             summary="Perform the Game Reset")
+async def perform_reset(
+    league_id: int,
+    body: ResetPerform,
+    request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Reset the league's game with its draft. **Every player on every board in
+    the league is wiped** once members run the Game Start this sends.
+
+    The draft must be at `version`, and `confirm` must be the league's code. The
+    hub then backs up the game, types the draft into the game's own reset
+    editor, checks every setting on both pages, and saves it as a league-wide
+    reset; a PLANETARY run then sends the Game Start. Anything unexpected before
+    the save puts the game back as it was and returns the settings to the draft.
+
+    Answers 202 at once with the reset under way; follow it with
+    `GET /leagues/{id}/resets/{reset_id}`. 409 when another reset is running or
+    the draft changed; 422 when the code is wrong, the draft no longer passes,
+    or the game isn't where config.toml says.
+    """
+    league = _league(db, league_id)
+    config = get_config()._raw
+    try:
+        reset = perform.start(db, league, body.version, body.confirm,
+                              current_user.username, config, date.today())
+    except perform.ResetRefused as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+    audit.record(db, "game_reset.performed", actor=current_user, target=league,
+                 detail=f"reset {reset.id} from draft version {body.version}",
+                 request=request)
+    db.commit()
+    perform.schedule(reset.id, config)
+    return _detail(db, league, reset)
+
+
+@router.get("/{league_id}/resets", response_model=List[ResetSummary],
+            summary="List the League's Resets")
+async def list_resets(
+    league_id: int,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Every reset of the league, newest first: those performed from the console,
+    including failed ones, and (BRE) those only seen in a Game Start packet."""
+    league = _league(db, league_id)
+    return [ResetSummary(**_summary(r, ended)) for r, ended in history.history(db, league)]
+
+
+@router.get("/{league_id}/resets/{reset_id}", response_model=ResetDetail,
+            summary="Get One Reset")
+async def get_reset(
+    league_id: int,
+    reset_id: int,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """One reset with its progress, the driver's log, and which members have
+    downloaded the packets that carry it."""
+    league = _league(db, league_id)
+    for r, ended in history.history(db, league):
+        if r.id == reset_id:
+            return _detail(db, league, r, ended)
+    raise HTTPException(status_code=404, detail="No such reset in this league")

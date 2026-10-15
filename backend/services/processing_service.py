@@ -126,14 +126,20 @@ class ProcessingService:
         # league groups of one batch. See step 6 of process_game_batch().
         self._unconsumed_count = 0
 
-    async def process_batch(self):
-        """Process all unprocessed packets"""
+    async def process_batch(self, also: tuple = ()) -> Optional[ProcessingRun]:
+        """Process all unprocessed packets, and return the run (None if there
+        was nothing to run).
+
+        `also` names leagues, as (game code, league number) like ("BRE", "015"),
+        whose game runs even with no packets waiting: a game reset's first
+        PLANETARY, which is what sends the league its Game Start.
+        """
         logger.info("Starting batch...")
 
         # Get unprocessed packets
         packets = self.db.query(Packet).filter(Packet.processed_at == None).all()
 
-        if not packets:
+        if not packets and not also:
             logger.info("No packets to process")
             # Still check for nodelists and other outbound files
             await self.scan_outbound_folders()
@@ -156,6 +162,8 @@ class ProcessingService:
                 logger.warning(f"Skipping packet {p.filename}: unknown game type '{league.game_type}'")
                 continue
             groups[(game_type_str, league.league_id)].append(p)
+        for key in also:
+            groups.setdefault(tuple(key), [])
 
         if not groups:
             logger.warning("No packets with valid league associations found")
@@ -178,13 +186,17 @@ class ProcessingService:
                 # Each group is one league, and the transcript for that group is
                 # the only place its movements are named. Remember which league
                 # it was before the outputs get concatenated together.
-                league_of_group[key] = group_packets[0].league_id
+                if group_packets:
+                    league_of_group[key] = group_packets[0].league_id
+                else:
+                    row = self._league(game_type_str, league_id_str)
+                    league_of_group[key] = row.id if row else None
                 logger.info(
                     f"Processing {len(group_packets)} packet(s) for "
                     f"{game_type_str} league {league_id_str}"
                 )
                 results[key] = await self.process_game_batch(
-                    game_type_str, group_packets, run.id
+                    game_type_str, group_packets, run.id, league_id_str
                 )
 
             run.completed_at = datetime.now()
@@ -276,6 +288,7 @@ class ProcessingService:
 
         # Always scan outbound folders for nodelists
         await self.scan_outbound_folders()
+        return run
 
 
     def get_game_type(self, packet: Packet) -> str:
@@ -369,17 +382,30 @@ class ProcessingService:
         if recorded:
             logger.info(f"Run {run.id}: recorded {recorded} item movement(s)")
 
-    async def process_game_batch(self, game_type: str, packets: list, run_id: int):
-        """Process a batch of packets for one game"""
-        # Get league_id from first packet (all packets in batch should be for same league)
-        if not packets:
-            return {"status": "success", "message": "No packets to process"}
+    def _league(self, game_type: str, league_number: str) -> Optional[League]:
+        return (self.db.query(League)
+                .filter(League.league_id == league_number,
+                        League.game_type == game_for_code(game_type).letter)
+                .first())
 
-        # Get league_id as string for config lookup
-        first_packet = packets[0]
-        league = self.db.query(League).filter(League.id == first_packet.league_id).first()
-        if not league:
-            return {"status": "error", "error": f"League not found for packet {first_packet.filename}"}
+    async def process_game_batch(self, game_type: str, packets: list, run_id: int,
+                                 league_number: Optional[str] = None):
+        """Process a batch of packets for one game.
+
+        With `league_number` the game runs even when `packets` is empty (see
+        process_batch's `also`); without it, the league is the packets' own.
+        """
+        if league_number is not None:
+            league = self._league(game_type, league_number)
+            if not league:
+                return {"status": "error", "error": f"League {league_number} not found"}
+        else:
+            if not packets:
+                return {"status": "success", "message": "No packets to process"}
+            first_packet = packets[0]
+            league = self.db.query(League).filter(League.id == first_packet.league_id).first()
+            if not league:
+                return {"status": "error", "error": f"League not found for packet {first_packet.filename}"}
 
         league_id = league.league_id  # This is the string league ID like "555"
 

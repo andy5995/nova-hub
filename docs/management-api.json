@@ -2159,6 +2159,17 @@
                 "type": "null"
               }
             ]
+          },
+          "under_way": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResetDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The league's reset in progress, if one is"
           }
         },
         "required": [
@@ -3923,6 +3934,193 @@
         "title": "ResetChoice",
         "type": "object"
       },
+      "ResetDetail": {
+        "properties": {
+          "applied_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied At"
+          },
+          "applied_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied By"
+          },
+          "backup_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Path"
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True once a Game Start agreeing with the settings went out; false if it disagreed; null until one is seen",
+            "title": "Confirmed"
+          },
+          "ended": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next reset's game start; null for the game being played",
+            "title": "Ended"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "game_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Game Start"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResetMember"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "mismatches": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Mismatches",
+            "type": "array"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "processing_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing Run Id"
+          },
+          "progress": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResetStep"
+            },
+            "title": "Progress",
+            "type": "array"
+          },
+          "sent_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent Config"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "source": {
+            "description": "console, or observed: seen in a Game Start packet, not performed from here",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "applying, applied or failed",
+            "title": "Status",
+            "type": "string"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResetWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "source",
+          "settings"
+        ],
+        "title": "ResetDetail",
+        "type": "object"
+      },
       "ResetDraft": {
         "properties": {
           "created_at": {
@@ -4187,6 +4385,205 @@
           "help"
         ],
         "title": "ResetField",
+        "type": "object"
+      },
+      "ResetMember": {
+        "description": "One packet the reset's processing run wrote, and whether its BBS has it.",
+        "properties": {
+          "bbs_index": {
+            "title": "Bbs Index",
+            "type": "string"
+          },
+          "bbs_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbs Name"
+          },
+          "downloaded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downloaded At"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bbs_index",
+          "filename"
+        ],
+        "title": "ResetMember",
+        "type": "object"
+      },
+      "ResetPerform": {
+        "properties": {
+          "confirm": {
+            "description": "The league's code, typed by hand (for example 015B)",
+            "title": "Confirm",
+            "type": "string"
+          },
+          "version": {
+            "description": "The draft version being performed",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "confirm"
+        ],
+        "title": "ResetPerform",
+        "type": "object"
+      },
+      "ResetStep": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "stage": {
+            "description": "queued, lock, backup, editor, saved, processing, sent; or restored, failed, interrupted",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "at"
+        ],
+        "title": "ResetStep",
+        "type": "object"
+      },
+      "ResetSummary": {
+        "description": "One row of a league's reset history.",
+        "properties": {
+          "applied_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied At"
+          },
+          "applied_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied By"
+          },
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True once a Game Start agreeing with the settings went out; false if it disagreed; null until one is seen",
+            "title": "Confirmed"
+          },
+          "ended": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next reset's game start; null for the game being played",
+            "title": "Ended"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "game_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Game Start"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "mismatches": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Mismatches",
+            "type": "array"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "source": {
+            "description": "console, or observed: seen in a Game Start packet, not performed from here",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "applying, applied or failed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "source",
+          "settings"
+        ],
+        "title": "ResetSummary",
         "type": "object"
       },
       "ResetWarning": {
@@ -7482,6 +7879,158 @@
           }
         },
         "summary": "Save the Game Reset Draft",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/reset/perform": {
+      "post": {
+        "description": "Reset the league's game with its draft. **Every player on every board in\nthe league is wiped** once members run the Game Start this sends.\n\nThe draft must be at `version`, and `confirm` must be the league's code. The\nhub then backs up the game, types the draft into the game's own reset\neditor, checks every setting on both pages, and saves it as a league-wide\nreset; a PLANETARY run then sends the Game Start. Anything unexpected before\nthe save puts the game back as it was and returns the settings to the draft.\n\nAnswers 202 at once with the reset under way; follow it with\n`GET /leagues/{id}/resets/{reset_id}`. 409 when another reset is running or\nthe draft changed; 422 when the code is wrong, the draft no longer passes,\nor the game isn't where config.toml says.",
+        "operationId": "perform_reset_api_v1_leagues__league_id__reset_perform_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPerform"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Perform the Game Reset",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/resets": {
+      "get": {
+        "description": "Every reset of the league, newest first: those performed from the console,\nincluding failed ones, and (BRE) those only seen in a Game Start packet.",
+        "operationId": "list_resets_api_v1_leagues__league_id__resets_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResetSummary"
+                  },
+                  "title": "Response List Resets Api V1 Leagues  League Id  Resets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the League's Resets",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/resets/{reset_id}": {
+      "get": {
+        "description": "One reset with its progress, the driver's log, and which members have\ndownloaded the packets that carry it.",
+        "operationId": "get_reset_api_v1_leagues__league_id__resets__reset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reset_id",
+            "required": true,
+            "schema": {
+              "title": "Reset Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get One Reset",
         "tags": [
           "Management API - Game Reset"
         ]
