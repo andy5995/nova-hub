@@ -118,6 +118,7 @@ def _form(db: Session, league: League) -> GameResetForm:
             protection_turns=seen.protection_turns,
             indiv_attacks=seen.indiv_attacks_per_day,
             lost_attack_days=seen.lost_attack_days,
+            settings=seen.settings,
             seen_at=_iso(seen.seen_at)),
         under_way=None if under_way is None else _detail(db, league, under_way),
     )

@@ -42,7 +42,8 @@ const GROUPS = [
   { id: 'InterBBS', title: 'InterBBS' }
 ]
 
-// What the hub decoded from the league's last Configupdate, by field id.
+// What the hub decoded from the league's last Configupdate before the full
+// decoder (16 Oct 2026): only these three. Newer ones carry `settings`.
 const OBSERVED: Record<string, 'protection_turns' | 'indiv_attacks' | 'lost_attack_days'> = {
   protection_turns: 'protection_turns',
   indiv_attacks: 'indiv_attacks',
@@ -134,8 +135,11 @@ function changedFromDefault(f: ResetField): boolean {
 function current(f: ResetField): string | null {
   const applied = form.value?.last_applied?.settings
   if (applied && f.id in applied) return display(f, applied[f.id])
+  const observed = form.value?.observed
   const key = OBSERVED[f.id]
-  const seen = key ? form.value?.observed?.[key] : null
+  const seen = observed?.settings && f.id in observed.settings
+    ? observed.settings[f.id]
+    : key ? observed?.[key] : null
   return seen === null || seen === undefined ? null : display(f, seen)
 }
 

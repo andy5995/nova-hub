@@ -121,7 +121,8 @@ def record_safely(db: Session, packet: Packet, content: bytes) -> int:
 
 
 def _remember_settings(db, league, packet, s: bre_packet.LeagueSettings):
-    seen = packet.uploaded_at or datetime.utcnow()
+    # A Configupdate comes from the hub's game; see history.record_game_start.
+    seen = packet.processed_at or packet.uploaded_at or datetime.utcnow()
     row = db.get(LeagueGameSettings, league.id)
     if row is not None and row.seen_at and row.seen_at > seen:
         return      # an older packet being backfilled; keep the newer settings
@@ -132,6 +133,7 @@ def _remember_settings(db, league, packet, s: bre_packet.LeagueSettings):
     row.protection_turns = s.protection_turns
     row.indiv_attacks_per_day = s.indiv_attacks_per_day
     row.lost_attack_days = s.lost_attack_days
+    row.settings = s.settings or None
     row.packet_id = packet.id
     row.seen_at = seen
 

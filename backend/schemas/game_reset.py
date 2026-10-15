@@ -64,6 +64,10 @@ class ObservedSettings(BaseModel):
     protection_turns: Optional[int] = None
     indiv_attacks: Optional[int] = None
     lost_attack_days: Optional[int] = None
+    settings: Optional[Dict[str, Any]] = Field(
+        None, description="Every reset-editor setting decoded, by field id, in the "
+                          "form's values; null until a Configupdate is seen after "
+                          "the full decoder")
     seen_at: Optional[str] = None
 
 

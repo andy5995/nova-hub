@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Every reset of a league, newest first. Each row opens into what it changed
 // from the reset before it. Resets only seen in a Game Start packet (BRE)
-// carry the three settings the hub decodes so far.
+// carry every setting but the start date, decoded from it.
 import { onMounted, ref, watch } from 'vue'
 import {
   apiError,

@@ -14,12 +14,16 @@ What the driver relies on, all seen on the test rig (15 Oct 2026):
   on a row after it is answered. PgDn and PgUp switch pages.
 - Enter on a row replaces the page with that setting's help, titled
   `──═<topic>═──`; the topic is the catalogue's `help_title`. Then:
-    number   "Enter New Value: (current; max)"; digits and Enter.
+    number   "Enter New Value: (current; max)"; digits and Enter. Both numbers
+             have thousands commas: "(0; 50,000)" (seen on the rig 16 Oct).
     choice   "New Setting:"; one letter, no Enter. Sabre's C then asks
              "Enter value >" for the dial; digits and Enter.
     toggle   flips at once and waits for a key. Most say "This option has
              been toggled."; BRE's Steady Investment says "The setting for
-             this option has been switched." over a Paused marker.
+             this option has been switched." over a Paused marker. BRE's
+             Local Attacks says nothing: its help fills the screen, so only
+             "»>Paused<«" shows (rig, 16 Oct). The row read after the edit is
+             what proves the flip.
     date     "Day (current; max)", "Month (...)" and "Year (...)", one at a
              time, each digits and Enter. BRE asks Day first, FE Month.
 - A value over the maximum is put back on the prompt and waits for a second
@@ -43,10 +47,11 @@ DOWN, UP, PGDN, PGUP, ESC = "\x1b[B", "\x1b[A", "\x1b[6~", "\x1b[5~", "\x1b"
 
 _ROW = re.compile(r"^\*?(?P<label>\S.*?)\s*: (?P<value>.*?)\s*$")
 _TOPIC = re.compile(r"──═(?P<topic>[^═]+)═──")
-_NUMBER_PROMPT = re.compile(r"Enter New Value: \(\d+; \d+\)\s*(?P<typed>.*)$")
+_NUMBER_PROMPT = re.compile(r"Enter New Value: \([\d,]+; [\d,]+\)\s*(?P<typed>.*)$")
 _CHOICE_PROMPT = re.compile(r"New Setting:\s*$")
 _DIAL_PROMPT = re.compile(r"Enter value >\s*$")
 _TOGGLED = re.compile(r"option has been (toggled|switched)")
+_PAUSED = re.compile(r"»>Paused<«")
 _DATE_PROMPT = re.compile(r"^(?P<part>Day|Month|Year) \(\d+; \d+\)\s*$")
 _ASK_RESET = re.compile(r"reset the Game", re.I)
 _ASK_LEAGUE_WIDE = re.compile(r"league-wide reset", re.I)
@@ -241,7 +246,8 @@ class EditorDriver:
                            lambda s: _DIAL_PROMPT.search(_last_line(s)))
                 self._press(f"{dial}\r", f"Sabre Constant Setting: {dial}")
         elif field.kind == TOGGLE:
-            self._wait(f"{field.label} to toggle", lambda s: _TOGGLED.search(s))
+            self._wait(f"{field.label} to toggle",
+                       lambda s: _TOGGLED.search(s) or _PAUSED.search(_last_line(s)))
             self._press("\r", f"{field.label}: toggled")
         elif field.kind == DATE:
             d = date.fromisoformat(v)

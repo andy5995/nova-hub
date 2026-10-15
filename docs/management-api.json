@@ -3339,6 +3339,19 @@
               }
             ],
             "title": "Seen At"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every reset-editor setting decoded, by field id, in the form's values; null until a Configupdate is seen after the full decoder",
+            "title": "Settings"
           }
         },
         "title": "ObservedSettings",

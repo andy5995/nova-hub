@@ -106,12 +106,16 @@ class FakeEditor:
         lines = ["                    ──═Configuration Help Information═──",
                  f"  ──═{topic}═──", "  Some help about it.", ""]
         if self.state == "num":
-            lines.append(f"Enter New Value: ({self.v[f.id]}; {f.max}) {self.typed}")
+            # The real editor puts thousands commas in both: "(0; 50,000)".
+            lines.append(f"Enter New Value: ({self.v[f.id]:,}; {f.max:,}) {self.typed}")
         elif self.state == "choice":
             lines += ["Possible Settings: " + "\n                   ".join(
                 n for _, n in f.choices), f"New Setting: {self.typed}"]
         elif self.state == "dial":
             lines.append(f"New Setting: Constant.  Enter value > {self.typed}")
+        elif self.state == "toggled" and (self.gt, f.id) == ("B", "local_attacks"):
+            # BRE's help fills the screen: no message, only the pause.
+            lines.append("─»>Paused<«─")
         elif self.state == "toggled":
             lines.append("  This option has been toggled.")
         elif self.state == "date":
@@ -233,7 +237,9 @@ def test_page_rows_reads_the_rig_screen():
 def test_a_bre_reset_changes_only_what_differs_and_reads_back():
     changes = {"start_date": "2026-11-20", "turns_per_day": 12, "steady_investment": True,
                "buy_military": "L", "attack_rewards": "L", "sabre": "C", "sabre_dial": 7,
-               "lost_attack_days": 3, "gooie": False, "dupe_checking": False}
+               "lost_attack_days": 3, "gooie": False, "dupe_checking": False,
+               "initial_land": 4321,  # a prompt with commas: "(0; 50,000)"
+               "local_attacks": False}  # toggles with no message
     d, ed, log = drive("B", changes)
     readback = d.run()
     assert ed.closed and ed.state == "done"
@@ -594,6 +600,23 @@ def test_a_game_start_confirms_the_console_reset_before_it(db_session, sample_le
     assert console.game_start == start and console.sent_config["mismatches"] == []
 
 
+def test_a_game_start_in_a_reused_row_is_dated_by_its_collection(db_session, sample_league):
+    """013B on dev, 15 Oct: the Game Start went out in rows first written on
+    11 Jan, whose uploaded_at said January, so it confirmed nothing."""
+    db, league = db_session, sample_league
+    s, _ = validate("B", defaults("B"), TODAY)
+    applied = datetime(2026, 10, 15, 22, 29, 35)
+    console = GameReset(league_id=league.id, status="applied", source="console",
+                        settings=s, version=1, applied_at=applied)
+    db.add(console)
+    db.commit()
+    row = packet(db, league, "555B0103.001", datetime(2026, 1, 11, 3, 21))
+    row.processed_at = applied + timedelta(seconds=1)
+    history.record_game_start(db, league, row, settings_record(applied))
+    assert console.game_start == applied
+    assert db.query(GameReset).filter_by(source="observed").count() == 0
+
+
 def test_a_disagreeing_game_start_is_a_mismatch(db_session, sample_league):
     db, league = db_session, sample_league
     s, _ = validate("B", defaults("B"), TODAY)
@@ -605,6 +628,27 @@ def test_a_disagreeing_game_start_is_a_mismatch(db_session, sample_league):
                                                  datetime(2026, 10, 15, 9, 1)),
                               settings_record(datetime(2026, 10, 15, 9), protection=0))
     assert console.sent_config["mismatches"] == ["protection_turns"]
+
+
+def test_every_decoded_setting_is_checked_not_just_the_first_three(db_session, sample_league):
+    """A real Game Start from the rig (capture c: Trade Costs High, among
+    others) against a draft that says Medium."""
+    import json
+    from pathlib import Path
+    db, league = db_session, sample_league
+    capture = json.loads((Path(__file__).parent / "fixtures" /
+                          "bre_configupdates.json").read_text())["c"]
+    draft = {**capture["settings"], "trade_costs": "M"}
+    console = GameReset(league_id=league.id, status="applied", source="console",
+                        settings=draft, version=1, applied_at=datetime(2026, 10, 16, 0, 0))
+    db.add(console)
+    db.commit()
+    rec = bre_packet.Record(bre_packet.GAME_START, 1, 2, True, bytes.fromhex(capture["game_start"]))
+    history.record_game_start(db, league, packet(db, league, "555B0102.001",
+                                                 datetime(2026, 10, 16, 0, 1)),
+                              bre_packet.league_settings(rec))
+    assert console.sent_config["mismatches"] == ["trade_costs"]
+    assert console.sent_config["gooie"] is False
 
 
 def test_other_game_starts_are_observed_and_history_runs_newest_first(db_session, sample_league):

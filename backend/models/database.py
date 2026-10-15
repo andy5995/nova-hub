@@ -577,6 +577,8 @@ class LeagueGameSettings(Base):
     protection_turns = Column(Integer, nullable=True)
     indiv_attacks_per_day = Column(Integer, nullable=True)
     lost_attack_days = Column(Integer, nullable=True)
+    # Every reset-editor setting decoded, by catalogue field id (bre_packet).
+    settings = Column(JSON, nullable=True)
     packet_id = Column(Integer, ForeignKey("packets.id"), nullable=True)
     seen_at = Column(DateTime, nullable=True)
 

@@ -394,6 +394,7 @@ export interface GameResetForm {
     protection_turns: number | null
     indiv_attacks: number | null
     lost_attack_days: number | null
+    settings: Record<string, ResetValue> | null
     seen_at: string | null
   } | null
   under_way: ResetDetail | null

@@ -3,8 +3,8 @@ only saw happen.
 
 A BRE game's first PLANETARY after a league-wide reset sends every member a
 Game Start record (0x10). It has the Configupdate's layout, so it carries the
-start time and the three settings bre_packet decodes so far. Every Game Start
-the hub passes is recorded here:
+start time and every other setting of the reset editor (bre_packet). Every Game
+Start the hub passes is recorded here:
 
 - right after a console reset, it confirms that reset: the start time and what
   was sent are filled in, and any setting that disagrees with the draft is
@@ -33,22 +33,28 @@ logger = get_logger(context="game_reset")
 # that run failing and the next good one being a day or so later.
 CONFIRM_WINDOW = timedelta(days=3)
 
-# The settings a Game Start carries, as catalogue field ids.
+# The three a test can build a LeagueSettings from without the full map.
 _SENT = (("protection_turns", "protection_turns"),
          ("indiv_attacks", "indiv_attacks_per_day"),
          ("lost_attack_days", "lost_attack_days"))
 
 
 def sent(s: bre_packet.LeagueSettings) -> dict:
+    """What a Game Start carried, by catalogue field id, plus `game_start`."""
     out = {fid: getattr(s, attr) for fid, attr in _SENT}
+    out.update(s.settings)
     out["game_start"] = s.game_started_at.isoformat() if s.game_started_at else None
     return out
 
 
+def _settings_in(got: dict) -> dict:
+    return {k: v for k, v in got.items() if k not in ("game_start", "mismatches")}
+
+
 def mismatches(settings: dict, got: dict) -> list:
     """The settings in `got` (from sent()) that disagree with a reset's draft."""
-    wrong = [fid for fid, _ in _SENT
-             if fid in settings and got.get(fid) is not None and got[fid] != settings[fid]]
+    wrong = [fid for fid, v in _settings_in(got).items()
+             if fid in settings and v is not None and v != settings[fid]]
     start = settings.get("start_date")
     if start and got.get("game_start") and got["game_start"][:10] != start:
         wrong.append("start_date")
@@ -65,10 +71,16 @@ def record_game_start(db: Session, league: League, packet: Packet,
              .filter(GameReset.league_id == league.id,
                      GameReset.game_start == s.game_started_at)
              .first())
-    if known is not None:
-        return known
     got = sent(s)
-    seen = packet.uploaded_at or datetime.utcnow()
+    if known is not None:
+        if known.source == "observed" and known.sent_config != got:
+            # Recorded by an older decoder: take what this one reads.
+            known.settings, known.sent_config = _settings_in(got), got
+        return known
+    # When the hub's game wrote it: a Game Start comes from the coordinator,
+    # the hub. Not uploaded_at, which a reused row keeps from its first packet;
+    # 013B's Game Starts of 15 Oct came out dated 11 Jan and confirmed nothing.
+    seen = packet.processed_at or packet.uploaded_at or datetime.utcnow()
     pending = (db.query(GameReset)
                .filter(GameReset.league_id == league.id,
                        GameReset.source == "console",
@@ -86,7 +98,7 @@ def record_game_start(db: Session, league: League, packet: Packet,
         return pending
     row = GameReset(
         league_id=league.id, status="applied", source="observed",
-        settings={fid: got[fid] for fid, _ in _SENT}, version=1,
+        settings=_settings_in(got), version=1,
         created_at=seen, updated_at=seen, applied_at=seen,
         game_start=s.game_started_at, sent_config=got)
     db.add(row)
