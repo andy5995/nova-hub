@@ -58,6 +58,8 @@ const dirty = computed(() => form.value !== null && snapshot() !== saved.value)
 function load(data: GameResetForm) {
   form.value = data
   if (data.under_way) progressId.value = data.under_way.id
+  // From the league page's history: /leagues/:id/reset?reset=<id>
+  else if (progressId.value === null && route.query.reset) progressId.value = Number(route.query.reset)
   values.value = { ...data.defaults, ...(data.draft?.settings ?? {}) }
   notes.value = data.draft?.notes ?? ''
   saved.value = snapshot()

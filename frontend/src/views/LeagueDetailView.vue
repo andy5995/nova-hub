@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useLeaguesStore, type LeagueMember } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
-import { leaguesApi } from '@/services/api'
+import ResetHistory from '@/components/ResetHistory.vue'
+import { gameResetApi, leaguesApi, type ResetField } from '@/services/api'
 import { gameForLetter, gameTypeName } from '@/games'
 
 const route = useRoute()
@@ -88,8 +89,25 @@ const hubEntryLine = computed(() => {
   return targets.length ? `1 HOST ${targets.join(' ')}` : '1 HOST (no members)'
 })
 
+// The reset history needs the game's fields to label its diffs; the reset
+// API is admin-only, so the card is too.
+const resetFields = ref<ResetField[] | null>(null)
+async function loadResetFields() {
+  if (!authStore.isAdmin) return
+  try {
+    resetFields.value = (await gameResetApi.form(leagueId.value)).data.fields
+  } catch {
+    resetFields.value = null // a game the reset editor doesn't know: no card
+  }
+}
+
+function openReset(resetId: number) {
+  router.push({ path: `/leagues/${leagueId.value}/reset`, query: { reset: String(resetId) } })
+}
+
 onMounted(async () => {
   await leaguesStore.loadLeague(leagueId.value)
+  loadResetFields()
 })
 
 function openEditModal() {
@@ -395,6 +413,15 @@ async function handleDelete() {
             </table>
           </div>
         </div>
+
+        <ResetHistory
+          v-if="resetFields"
+          class="mt-4"
+          :league-id="leagueId"
+          :fields="resetFields"
+          :refresh-key="0"
+          @open="openReset"
+        />
       </template>
 
       <!-- Edit Modal -->
