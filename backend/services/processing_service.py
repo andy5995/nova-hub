@@ -784,7 +784,10 @@ class ProcessingService:
                     .order_by(Packet.id.desc())
                     .first()
                 )
-                if existing is not None and existing.is_downloaded:
+                # downloaded_at too: rows from January 2026 have it set with
+                # is_downloaded still false, and must not take a new packet's place.
+                if existing is not None and (existing.is_downloaded
+                                             or existing.downloaded_at is not None):
                     existing = None
 
                 if existing:

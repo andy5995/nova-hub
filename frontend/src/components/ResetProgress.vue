@@ -33,14 +33,25 @@ const ending = computed(() =>
   (reset.value?.progress ?? []).map((p) => p.stage).find((s) => s in ENDINGS)
 )
 const running = computed(() => reset.value?.status === 'applying')
+// The reset is "applied" once the editor saves, but its PLANETARY run is still
+// to come: the card has work to show until "sent", or an error says it stopped.
+const working = computed(
+  () => running.value || (reset.value?.status === 'applied' && !reached.value.has('sent') && !reset.value.error)
+)
+
+// Every stage is recorded as it finishes, except "editor", recorded as the
+// typing starts: it's done when the save lands.
+function finished(stage: string): boolean {
+  if (stage === 'editor') return reached.value.has('saved')
+  return reached.value.has(stage)
+}
 
 function state(stage: string): 'done' | 'active' | 'waiting' | 'skipped' {
-  if (reached.value.has(stage)) {
-    // The stage being worked on is the last one reached, until the next lands.
-    const last = reset.value!.progress[reset.value!.progress.length - 1].stage
-    return running.value && last === stage && stage !== 'queued' ? 'active' : 'done'
-  }
-  return running.value ? 'waiting' : 'skipped'
+  if (finished(stage)) return 'done'
+  if (working.value) return STEPS.find((s) => !finished(s.stage))?.stage === stage ? 'active' : 'waiting'
+  // Applied but the run after it failed: the Game Start goes with the next run.
+  if (reset.value?.status === 'applied') return 'waiting'
+  return 'skipped'
 }
 
 const downloaded = computed(() => reset.value?.members.filter((m) => m.downloaded_at).length ?? 0)
@@ -56,15 +67,15 @@ function formatTime(iso: string | null | undefined): string {
 async function poll() {
   try {
     const { data } = await gameResetApi.reset(props.leagueId, props.resetId)
-    const was = reset.value?.status
+    const was = working.value
     reset.value = data
     error.value = ''
-    if (was === 'applying' && data.status !== 'applying') emit('finished', data)
+    if (was && !working.value) emit('finished', data)
   } catch (e) {
     error.value = apiError(e, 'Could not read the reset')
   }
   // Fast while the hub works; slowly while members are still downloading.
-  const next = running.value ? 2000 : reset.value?.status === 'applied' && !allDownloaded.value ? 30000 : 0
+  const next = working.value ? 2000 : reset.value?.status === 'applied' && !allDownloaded.value ? 30000 : 0
   if (next) timer = window.setTimeout(poll, next)
 }
 
@@ -78,10 +89,10 @@ onBeforeUnmount(() => window.clearTimeout(timer))
 </script>
 
 <template>
-  <section class="card mb-4 progress-card" :class="reset?.status">
+  <section class="card mb-4 progress-card" :class="working ? 'applying' : reset?.status">
     <div class="card-header">
       <h3>
-        <template v-if="!reset || running">Reset under way</template>
+        <template v-if="!reset || working">Reset under way</template>
         <template v-else-if="reset.status === 'applied'">Reset performed</template>
         <template v-else>Reset failed</template>
       </h3>

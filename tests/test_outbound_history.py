@@ -78,3 +78,17 @@ def test_a_name_that_recurs_before_it_was_taken_is_the_same_packet_rewritten(db,
     assert rows[0].checksum == hashlib.sha256(
         (FIXTURES / "results_late_901b0102.004").read_bytes()).hexdigest()
     assert rows[0].file_data is None
+
+
+def test_a_row_with_a_download_time_is_taken_even_without_the_flag(db, hub):
+    """Rows from January 2026 carry downloaded_at with is_downloaded false. A
+    reset's Game Start reused one, and showed as downloaded months before it
+    was written."""
+    from datetime import datetime
+    first, = hub("results_901b0102.002")
+    first.downloaded_at = datetime(2026, 1, 11, 3, 33)
+    db.commit()
+
+    old, new = hub("results_late_901b0102.004")
+    assert old.id == first.id and old.downloaded_at == datetime(2026, 1, 11, 3, 33)
+    assert new.downloaded_at is None
