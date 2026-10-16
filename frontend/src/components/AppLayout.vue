@@ -339,10 +339,13 @@ function toggleSidebar() {
   display: none;
 }
 
+/* The window scrolls, not this (see .sidebar): an overflow here would make
+   it the scroll container for anything sticky inside a page, which then never
+   sticks. min-width lets it shrink beside the sidebar rather than widen. */
 .main-content {
   flex: 1;
+  min-width: 0;
   padding: 1.5rem;
-  overflow-y: auto;
   background-color: var(--color-bg);
 }
 </style>

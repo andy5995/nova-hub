@@ -148,7 +148,7 @@ onMounted(load)
                   <span v-else-if="r.source === 'console'" class="badge badge-warning">awaiting Game Start</span>
                   <span v-else class="badge badge-success">applied</span>
                 </td>
-                <td class="toggle">{{ expanded === r.id ? '▾' : '▸' }}</td>
+                <td class="toggle"><span class="chevron" :class="{ open: expanded === r.id }" aria-hidden="true"></span></td>
               </tr>
               <tr v-if="expanded === r.id" class="detail">
                 <td colspan="5">
@@ -222,7 +222,21 @@ onMounted(load)
 
 .toggle {
   width: 1.5rem;
-  color: var(--color-text-muted);
+}
+
+/* Points right when shut, down when open. */
+.chevron {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.chevron.open {
+  transform: rotate(45deg);
 }
 
 .detail > td {

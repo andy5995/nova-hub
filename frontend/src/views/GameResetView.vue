@@ -357,7 +357,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
 
         <section v-for="g in GROUPS" :key="g.id" class="card mb-4">
           <button class="card-header fold" :aria-expanded="opened[g.id]" @click="opened[g.id] = !opened[g.id]">
-            <span class="fold-mark" aria-hidden="true">{{ opened[g.id] ? '▾' : '▸' }}</span>
+            <span class="chevron" :class="{ open: opened[g.id] }" aria-hidden="true"></span>
             <h3>{{ g.title }}</h3>
             <span class="text-muted small">{{ fieldsIn(g.id).length }} settings</span>
             <span v-if="changedIn(g.id)" class="badge badge-info">
@@ -464,7 +464,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
 
         <section class="card mb-4">
           <button class="card-header fold" :aria-expanded="opened.LeagueWide" @click="opened.LeagueWide = !opened.LeagueWide">
-            <span class="fold-mark" aria-hidden="true">{{ opened.LeagueWide ? '▾' : '▸' }}</span>
+            <span class="chevron" :class="{ open: opened.LeagueWide }" aria-hidden="true"></span>
             <h3>League-wide reset</h3>
             <span class="text-muted small">always yes</span>
           </button>
@@ -615,9 +615,25 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
   margin: 0;
 }
 
-.fold-mark {
-  width: 1rem;
-  color: var(--color-text-muted);
+.fold[aria-expanded='true'] {
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Points right when folded, down when open. */
+.chevron {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: 0 0.25rem;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  flex: none;
+  align-self: center;
+}
+
+.chevron.open {
+  transform: rotate(45deg);
 }
 
 .small {
@@ -757,7 +773,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
 }
 
 .timezones {
-  margin: 0 0 1rem;
+  margin: 1rem 1.25rem 0;
 }
 
 .timezones ul {
