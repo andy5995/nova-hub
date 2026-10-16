@@ -194,7 +194,10 @@ def test_packets_and_alerts_are_those_to_or_from_her_bbs(world):
 
 def test_runs_show_her_leagues_without_the_transcript_or_others_packets(world):
     client, _, _, ids = world
-    assert [r["id"] for r in get(client, "/processing/runs")] == [ids["run_bre"]]
+    runs = get(client, "/processing/runs")
+    assert [r["id"] for r in runs] == [ids["run_bre"]]
+    # The run made files for 777F too, but that league isn't hers.
+    assert runs[0]["leagues"] == ["555B"] and runs[0]["league_name"] == "555B"
     assert status(client, f"/processing/runs/{ids['run_fe']}") == 404
     run = get(client, f"/processing/runs/{ids['run_bre']}")
     assert [p["filename"] for p in run["packets"]] == ["555B0203.001"]
@@ -243,6 +246,11 @@ def test_an_admin_still_sees_everything(world):
     assert len(get(client, "/alerts")) == 3
     run = get(client, f"/processing/runs/{ids['run_bre']}")
     assert run["dosemu_output"] == "BRE transcript"
+    # Every league the run touched, though its own league_id is unset.
+    assert run["leagues"] == ["555B", "777F"]
+    assert {r["id"]: r["leagues"] for r in get(client, "/processing/runs")} == {
+        ids["run_bre"]: ["555B", "777F"], ids["run_fe"]: ["777F"]}
+    assert {f["league_name"] for f in run["routes_files"]} == {"555B", "777F"}
     assert len(run["packets"]) == 2
     league = get(client, f"/leagues/{ids['bre']}")
     assert league["dosemu_path"] == "/srv/bre"

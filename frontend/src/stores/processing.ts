@@ -9,6 +9,7 @@ export interface ProcessingRun {
   duration?: string
   packets_processed: number
   status: string  // "running", "completed", "failed"
+  leagues: string[]  // what it processed, e.g. ["015B", "015F"]
   league_name?: string
 }
 
@@ -22,6 +23,7 @@ export interface ProcessingRunFile {
   id: number
   filename: string
   file_type: string  // "score", "routes", "bbsinfo"
+  league_name?: string  // the league it came from, e.g. "015B"
   file_data?: string
   file_data_html?: string
 }
@@ -33,6 +35,7 @@ export interface ProcessingRunDetail {
   duration?: string
   packets_processed: number
   status: string
+  leagues: string[]
   league_name?: string
   error_message?: string
   dosemu_output?: string

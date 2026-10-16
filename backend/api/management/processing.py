@@ -1,6 +1,6 @@
 """Management API processing run endpoints"""
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -22,6 +22,30 @@ from backend.services.log_prettify import ansi_to_html, strip_multiple_blank_lin
 logger = get_logger(context="management_processing")
 
 router = APIRouter()
+
+
+def _run_leagues(db: Session, run_ids: List[int], scope: Scope) -> Dict[int, List[str]]:
+    """The leagues each run processed, as "015B", sorted, in one pass for any
+    number of runs. A run takes every league with work in one go, so its own
+    league_id has never been set; what it did is the record: the leagues whose
+    packets it moved and whose score and listing files it made (the same test
+    Scope.run_clause uses). A sysop sees only their own leagues among them."""
+    if not run_ids:
+        return {}
+    pairs = set(
+        db.query(Packet.processing_run_id, Packet.league_id)
+        .filter(Packet.processing_run_id.in_(run_ids)).distinct().all()
+    ) | set(
+        db.query(ProcessingRunFile.processing_run_id, ProcessingRunFile.league_id)
+        .filter(ProcessingRunFile.processing_run_id.in_(run_ids)).distinct().all()
+    )
+    league_ids = {lid for _, lid in pairs if lid is not None and scope.sees_league(lid)}
+    names = {l.id: l.full_id for l in db.query(League).filter(League.id.in_(league_ids))}
+    out: Dict[int, List[str]] = {rid: [] for rid in run_ids}
+    for rid, lid in pairs:
+        if lid in names:
+            out[rid].append(names[lid])
+    return {rid: sorted(v) for rid, v in out.items()}
 
 
 @router.get("/runs", response_model=List[ProcessingRunResponse], summary="List Processing Runs")
@@ -54,19 +78,14 @@ async def list_runs(
         .all()
     )
 
+    leagues_of = _run_leagues(db, [r.id for r in runs], scope)
     run_list = []
     for run in runs:
         duration = None
         if run.completed_at:
             delta = run.completed_at - run.started_at
             duration = f"{delta.seconds}s"
-
-        # Get league info if available
-        league_name = None
-        if run.league_id:
-            league = db.query(League).filter(League.id == run.league_id).first()
-            if league:
-                league_name = f"{league.game_type} {league.league_id}"
+        leagues = leagues_of.get(run.id, [])
 
         run_list.append(
             ProcessingRunResponse(
@@ -78,7 +97,8 @@ async def list_runs(
                 packets_unconsumed=run.packets_unconsumed or 0,
                 status=run.status,
                 error_message=run.error_message,
-                league_name=league_name,
+                leagues=leagues,
+                league_name=", ".join(leagues) or None,
             )
         )
 
@@ -118,12 +138,7 @@ async def get_run(
         delta = run.completed_at - run.started_at
         duration = f"{delta.seconds}s"
 
-    # Get league info
-    league_name = None
-    if run.league_id:
-        league = db.query(League).filter(League.id == run.league_id).first()
-        if league:
-            league_name = f"{league.game_type} {league.league_id}"
+    leagues = _run_leagues(db, [run.id], scope)[run.id]
 
     # Get packets processed in this run
     packets = db.query(Packet).filter(Packet.processing_run_id == run_id).all()
@@ -136,7 +151,7 @@ async def get_run(
         packet_list.append(
             ProcessingRunPacket(
                 filename=packet.filename,
-                league_name=f"{p_league.game_type} {p_league.league_id}" if p_league else "Unknown",
+                league_name=p_league.full_id if p_league else "Unknown",
                 route=f"{packet.source_bbs_index} -> {packet.dest_bbs_index}",
             )
         )
@@ -167,7 +182,7 @@ async def get_run(
         if file.league_id:
             file_league = db.query(League).filter(League.id == file.league_id).first()
             if file_league:
-                file_league_name = f"{file_league.game_type} {file_league.league_id}"
+                file_league_name = file_league.full_id
 
         file_schema = ProcessingRunFileSchema(
             id=file.id,
@@ -203,7 +218,8 @@ async def get_run(
         packets_processed=run.packets_processed,
         packets_unconsumed=run.packets_unconsumed or 0,
         status=run.status,
-        league_name=league_name,
+        leagues=leagues,
+        league_name=", ".join(leagues) or None,
         # error_message is where a failed run records why; stderr_log is only ever
         # populated for subprocess plumbing errors and was almost always empty, so
         # the detail view showed nothing for a failure that had a perfectly good

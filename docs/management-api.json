@@ -3650,6 +3650,14 @@
             ],
             "title": "League Name"
           },
+          "leagues": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Leagues",
+            "type": "array"
+          },
           "packets": {
             "default": [],
             "items": {
@@ -3831,7 +3839,17 @@
                 "type": "null"
               }
             ],
+            "description": "The same leagues, comma-separated",
             "title": "League Name"
+          },
+          "leagues": {
+            "default": [],
+            "description": "The leagues the run processed, e.g. ['015B', '015F']: those whose packets it moved or whose score and listing files it made",
+            "items": {
+              "type": "string"
+            },
+            "title": "Leagues",
+            "type": "array"
           },
           "packets_processed": {
             "default": 0,
