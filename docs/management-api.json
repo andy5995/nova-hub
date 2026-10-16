@@ -2132,6 +2132,9 @@
             "title": "Game Type",
             "type": "string"
           },
+          "hub_timezone": {
+            "$ref": "#/components/schemas/HubTimezone"
+          },
           "last_applied": {
             "anyOf": [
               {
@@ -2178,7 +2181,8 @@
           "game_type",
           "fields",
           "defaults",
-          "league_wide_help"
+          "league_wide_help",
+          "hub_timezone"
         ],
         "title": "GameResetForm",
         "type": "object"
@@ -2255,6 +2259,33 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HubTimezone": {
+        "description": "The hub's own clock, for the form's note on dates. The dates themselves\nare applied by each BBS on its own clock; the hub enforces none.",
+        "properties": {
+          "name": {
+            "description": "IANA name where the host has one (Etc/UTC), else its abbreviation",
+            "title": "Name",
+            "type": "string"
+          },
+          "today": {
+            "description": "The hub's date now, which the form's date checks use",
+            "title": "Today",
+            "type": "string"
+          },
+          "utc_offset": {
+            "description": "Offset from UTC now, as +HH:MM",
+            "title": "Utc Offset",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "utc_offset",
+          "today"
+        ],
+        "title": "HubTimezone",
         "type": "object"
       },
       "JoinApplicationRequest": {

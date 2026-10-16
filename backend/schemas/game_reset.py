@@ -120,6 +120,14 @@ class ResetPerform(BaseModel):
     confirm: str = Field(description="The league's code, typed by hand (for example 015B)")
 
 
+class HubTimezone(BaseModel):
+    """The hub's own clock, for the form's note on dates. The dates themselves
+    are applied by each BBS on its own clock; the hub enforces none."""
+    name: str = Field(description="IANA name where the host has one (Etc/UTC), else its abbreviation")
+    utc_offset: str = Field(description="Offset from UTC now, as +HH:MM")
+    today: str = Field(description="The hub's date now, which the form's date checks use")
+
+
 class GameResetForm(BaseModel):
     league_id: int
     full_id: str
@@ -132,6 +140,7 @@ class GameResetForm(BaseModel):
     observed: Optional[ObservedSettings] = None
     under_way: Optional[ResetDetail] = Field(
         None, description="The league's reset in progress, if one is")
+    hub_timezone: HubTimezone
 
 
 class ResetDraftSave(BaseModel):

@@ -1,7 +1,9 @@
 """A league's game reset: the form, with every setting's help; the league's one
 saved draft; performing it; and the league's reset history. See
 backend/services/game_reset/."""
+import os
 from datetime import date, datetime
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,7 +17,7 @@ from backend.models.database import (
     GameReset, League, LeagueGameSettings, LeagueMembership, Packet, SysopUser,
 )
 from backend.schemas.game_reset import (
-    GameResetForm, ObservedSettings, ResetApplied, ResetChoice, ResetDetail,
+    GameResetForm, HubTimezone, ObservedSettings, ResetApplied, ResetChoice, ResetDetail,
     ResetDraft, ResetDraftSave, ResetField, ResetMember, ResetPerform, ResetStep,
     ResetSummary, ResetWarning,
 )
@@ -87,6 +89,21 @@ def _detail(db: Session, league: League, r: GameReset,
         members=_members(db, league, r.processing_run_id))
 
 
+def _hub_timezone() -> HubTimezone:
+    now = datetime.now().astimezone()
+    name = os.environ.get("TZ", "").lstrip(":")
+    if not name:
+        try:
+            target = str(Path("/etc/localtime").resolve())
+            name = target.split("zoneinfo/", 1)[1] if "zoneinfo/" in target else ""
+        except OSError:
+            name = ""
+    offset = now.strftime("%z")
+    return HubTimezone(name=name or now.tzname() or "UTC",
+                       utc_offset=f"{offset[:3]}:{offset[3:]}",
+                       today=date.today().isoformat())
+
+
 def _form(db: Session, league: League) -> GameResetForm:
     applied = drafts.last_applied(db, league)
     under_way = (db.query(GameReset)
@@ -121,6 +138,7 @@ def _form(db: Session, league: League) -> GameResetForm:
             settings=seen.settings,
             seen_at=_iso(seen.seen_at)),
         under_way=None if under_way is None else _detail(db, league, under_way),
+        hub_timezone=_hub_timezone(),
     )
 
 

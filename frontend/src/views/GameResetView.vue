@@ -375,6 +375,31 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
             <h3>{{ g.title }}</h3>
           </div>
           <div class="card-body fields">
+            <div v-if="g.id === 'General'" class="our-note timezones">
+              <strong>Dates and timezones</strong>
+              <ul>
+                <li>
+                  The hub runs on {{ form.hub_timezone.name }} (UTC{{ form.hub_timezone.utc_offset }});
+                  its date is {{ form.hub_timezone.today }}.
+                </li>
+                <li>
+                  The dates you choose are applied locally on each BBS. The hub does not enforce
+                  any dates or timezones itself.
+                </li>
+                <li>
+                  BBSes with a positive timezone offset can start play earlier, but the offset
+                  applies consistently throughout the round, so there is no benefit or detriment.
+                </li>
+                <li>
+                  For structured leagues, set a Game Start Date at least one day from now, so
+                  everyone gets the same chance to play at their own timezone offset.
+                </li>
+                <li>
+                  For casual leagues, ignore all of the above: leave the dates at their defaults
+                  and go have fun.
+                </li>
+              </ul>
+            </div>
             <div
               v-for="f in fieldsIn(g.id)"
               :key="f.id"
@@ -655,6 +680,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
   font-size: 0.825rem;
   background: var(--color-bg);
   border-radius: var(--radius-sm);
+}
+
+.timezones {
+  margin: 0 0 1rem;
+}
+
+.timezones ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
 }
 
 .admin-note {

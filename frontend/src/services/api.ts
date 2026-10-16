@@ -398,6 +398,7 @@ export interface GameResetForm {
     seen_at: string | null
   } | null
   under_way: ResetDetail | null
+  hub_timezone: { name: string; utc_offset: string; today: string }
 }
 
 // One row of a league's reset history. `source` is 'observed' for a reset

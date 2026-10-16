@@ -4,6 +4,7 @@ The catalogue is what the driver will type into the game's editor, so these
 tests pin it to what the editors showed on the rig (14 Oct 2026): every field,
 in order, with its default and maximum.
 """
+import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -204,6 +205,9 @@ def test_form_has_every_field_and_no_draft(api):
     assert body["defaults"] == defaults("B")
     assert body["draft"] is None and body["full_id"] == "015B"
     assert body["league_wide_help"].startswith("Selecting this will send reset")
+    tz = body["hub_timezone"]
+    assert tz["name"] and re.fullmatch(r"[+-]\d\d:\d\d", tz["utc_offset"])
+    assert tz["today"] == date.today().isoformat()
 
 
 def test_save_update_conflict_and_discard(api):
