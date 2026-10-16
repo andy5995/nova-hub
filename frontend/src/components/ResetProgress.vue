@@ -5,7 +5,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { apiError, gameResetApi, type ResetDetail } from '@/services/api'
 
-const props = defineProps<{ leagueId: number; resetId: number }>()
+// `embedded`: shown inside a row of the reset history, which already says
+// whose reset it is and how it ended, so no card of its own.
+const props = defineProps<{ leagueId: number; resetId: number; embedded?: boolean }>()
 const emit = defineEmits<{ finished: [reset: ResetDetail] }>()
 
 const reset = ref<ResetDetail | null>(null)
@@ -89,8 +91,11 @@ onBeforeUnmount(() => window.clearTimeout(timer))
 </script>
 
 <template>
-  <section class="card mb-4 progress-card" :class="working ? 'applying' : reset?.status">
-    <div class="card-header">
+  <section
+    class="progress-card"
+    :class="[working ? 'applying' : reset?.status, embedded ? 'embedded' : 'card mb-4']"
+  >
+    <div v-if="!embedded" class="card-header">
       <h3>
         <template v-if="!reset || working">Reset under way</template>
         <template v-else-if="reset.status === 'applied'">Reset performed</template>
@@ -100,7 +105,7 @@ onBeforeUnmount(() => window.clearTimeout(timer))
         by {{ reset.applied_by }}
       </span>
     </div>
-    <div class="card-body">
+    <div :class="{ 'card-body': !embedded }">
       <div v-if="error" class="alert alert-error mb-2">{{ error }}</div>
       <template v-if="reset">
         <ol class="steps">
@@ -166,6 +171,10 @@ onBeforeUnmount(() => window.clearTimeout(timer))
 </template>
 
 <style scoped>
+.progress-card.embedded {
+  padding: 0.25rem 0 0.25rem 0.875rem;
+}
+
 .progress-card.applying {
   border-left: 4px solid var(--color-primary);
 }

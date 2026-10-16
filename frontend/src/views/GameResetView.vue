@@ -9,7 +9,6 @@ import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import ResetHistory from '@/components/ResetHistory.vue'
 import ResetPerformDialog from '@/components/ResetPerformDialog.vue'
-import ResetProgress from '@/components/ResetProgress.vue'
 import {
   apiError,
   gameResetApi,
@@ -33,7 +32,7 @@ const error = ref('')
 const message = ref('')
 const serverErrors = ref<Record<string, string>>({})
 const performing = ref(false) // the confirmation dialog is open
-const progressId = ref<number | null>(null) // the reset shown in the progress card
+const openReset = ref<number | null>(null) // the history row opened, with its progress
 const historyKey = ref(0)
 
 const GROUPS = [
@@ -41,6 +40,17 @@ const GROUPS = [
   { id: 'GamePlay', title: 'GamePlay' },
   { id: 'InterBBS', title: 'InterBBS' }
 ]
+
+// Which settings cards are open. They start open, unless the page opens on a
+// reset (under way, or from the league page): then the reset is the point.
+const opened = ref<Record<string, boolean>>({})
+const historyEl = ref<HTMLElement | null>(null)
+
+function setAll(open: boolean) {
+  opened.value = Object.fromEntries([...GROUPS.map((g) => g.id), 'LeagueWide'].map((id) => [id, open]))
+}
+
+const allOpen = computed(() => Object.values(opened.value).every(Boolean))
 
 // What the hub decoded from the league's last Configupdate before the full
 // decoder (16 Oct 2026): only these three. Newer ones carry `settings`.
@@ -57,10 +67,12 @@ function snapshot(): string {
 const dirty = computed(() => form.value !== null && snapshot() !== saved.value)
 
 function load(data: GameResetForm) {
+  const first = form.value === null
   form.value = data
-  if (data.under_way) progressId.value = data.under_way.id
+  if (data.under_way) openReset.value = data.under_way.id
   // From the league page's history: /leagues/:id/reset?reset=<id>
-  else if (progressId.value === null && route.query.reset) progressId.value = Number(route.query.reset)
+  else if (openReset.value === null && route.query.reset) openReset.value = Number(route.query.reset)
+  if (first) setAll(openReset.value === null)
   values.value = { ...data.defaults, ...(data.draft?.settings ?? {}) }
   notes.value = data.draft?.notes ?? ''
   saved.value = snapshot()
@@ -100,6 +112,14 @@ function problem(f: ResetField): string {
   }
   if (f.kind === 'date' && f.default !== null && !v) return 'Enter a date.'
   return serverErrors.value[f.id] ?? ''
+}
+
+function changedIn(group: string): number {
+  return fieldsIn(group).filter(changedFromDefault).length
+}
+
+function problemsIn(group: string): number {
+  return fieldsIn(group).filter((f) => problem(f)).length
 }
 
 const problems = computed(() =>
@@ -190,7 +210,8 @@ async function save() {
         const id = d?.loc?.[d.loc.length - 1]
         if (typeof id === 'string') serverErrors.value[id] = d.msg
       }
-      error.value = 'Some settings need fixing; each is marked below.'
+      error.value = 'Some settings need fixing; each is marked above.'
+      for (const g of GROUPS) if (problemsIn(g.id)) opened.value[g.id] = true
     } else {
       error.value = apiError(e, 'Could not save the draft')
     }
@@ -231,23 +252,20 @@ const performBlocked = computed(() => {
   return ''
 })
 
+// The new reset opens at the top of the history, where its steps then run;
+// the settings fold away, having done their part.
 function onPerformed(reset: ResetDetail) {
   performing.value = false
   message.value = ''
-  progressId.value = reset.id
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  openReset.value = reset.id
+  setAll(false)
   fetchForm(true)
   historyKey.value++
+  historyEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function onFinished() {
   fetchForm(true)
-  historyKey.value++
-}
-
-function openReset(id: number) {
-  progressId.value = id
-  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function warnOnUnload(e: BeforeUnloadEvent) {
@@ -306,75 +324,48 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
           both pages, and puts the game back as it was if anything doesn't match.
         </div>
 
-        <ResetProgress
-          v-if="progressId !== null"
-          :league-id="leagueId"
-          :reset-id="progressId"
-          @finished="onFinished"
-        />
+        <div ref="historyEl">
+          <ResetHistory
+            :league-id="leagueId"
+            :fields="form.fields"
+            :refresh-key="historyKey"
+            :open-id="openReset"
+            inline
+            @finished="onFinished"
+          />
+        </div>
 
-        <div class="toolbar card mb-4">
-          <div class="card-body toolbar-body">
-            <div class="draft-state">
-              <template v-if="form.draft">
-                <strong>Draft, version {{ form.draft.version }}</strong>
-                <span class="text-muted">
-                  last saved by {{ form.draft.updated_by }} at
-                  {{ formatTime(form.draft.updated_at) }}
-                </span>
-              </template>
-              <strong v-else>No draft yet: these are the game's defaults.</strong>
-              <span v-if="dirty" class="badge badge-warning">Unsaved changes</span>
-              <span v-if="problems" class="badge badge-danger">
-                {{ problems }} to fix
-              </span>
-              <span v-if="advisories" class="badge badge-warning">
-                {{ advisories }} below the usual minimum
-              </span>
-            </div>
-            <div class="actions">
-              <button class="btn btn-secondary btn-sm" @click="useDefaults">
-                Game defaults
-              </button>
-              <button
-                class="btn btn-secondary btn-sm"
-                :disabled="!form.last_applied"
-                :title="form.last_applied ? '' : 'No reset has been performed from the console yet'"
-                @click="copyLast"
-              >
-                Copy from last reset
-              </button>
-              <button v-if="form.draft" class="btn btn-secondary btn-sm" @click="discard">
-                Discard draft
-              </button>
-              <button
-                class="btn btn-primary btn-sm"
-                :disabled="saving || !dirty || problems > 0"
-                @click="save"
-              >
-                {{ saving ? 'Saving...' : 'Save draft' }}
-              </button>
-              <button
-                class="btn btn-danger btn-sm perform"
-                :disabled="!!performBlocked"
-                :title="performBlocked"
-                @click="performing = true"
-              >
-                PERFORM RESET
-              </button>
-            </div>
-          </div>
-          <div v-if="error" class="alert alert-error toolbar-alert">{{ error }}</div>
-          <div v-else-if="message && !dirty" class="alert alert-success toolbar-alert">
-            {{ message }}
+        <div class="settings-bar mb-4">
+          <h2>Settings for the next game</h2>
+          <div class="actions">
+            <button class="btn btn-secondary btn-sm" @click="useDefaults">
+              Game defaults
+            </button>
+            <button
+              class="btn btn-secondary btn-sm"
+              :disabled="!form.last_applied"
+              :title="form.last_applied ? '' : 'No reset has been performed from the console yet'"
+              @click="copyLast"
+            >
+              Copy from last reset
+            </button>
+            <button class="btn btn-secondary btn-sm" @click="setAll(!allOpen)">
+              {{ allOpen ? 'Collapse all' : 'Expand all' }}
+            </button>
           </div>
         </div>
 
         <section v-for="g in GROUPS" :key="g.id" class="card mb-4">
-          <div class="card-header">
+          <button class="card-header fold" :aria-expanded="opened[g.id]" @click="opened[g.id] = !opened[g.id]">
+            <span class="fold-mark" aria-hidden="true">{{ opened[g.id] ? '▾' : '▸' }}</span>
             <h3>{{ g.title }}</h3>
-          </div>
-          <div class="card-body fields">
+            <span class="text-muted small">{{ fieldsIn(g.id).length }} settings</span>
+            <span v-if="changedIn(g.id)" class="badge badge-info">
+              {{ changedIn(g.id) }} changed from default
+            </span>
+            <span v-if="problemsIn(g.id)" class="badge badge-danger">{{ problemsIn(g.id) }} to fix</span>
+          </button>
+          <div v-if="opened[g.id]" class="card-body fields">
             <div v-if="g.id === 'General'" class="our-note timezones">
               <strong>Dates and timezones</strong>
               <ul>
@@ -472,10 +463,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
         </section>
 
         <section class="card mb-4">
-          <div class="card-header">
+          <button class="card-header fold" :aria-expanded="opened.LeagueWide" @click="opened.LeagueWide = !opened.LeagueWide">
+            <span class="fold-mark" aria-hidden="true">{{ opened.LeagueWide ? '▾' : '▸' }}</span>
             <h3>League-wide reset</h3>
-          </div>
-          <div class="card-body field-help">
+            <span class="text-muted small">always yes</span>
+          </button>
+          <div v-if="opened.LeagueWide" class="card-body field-help">
             <p v-for="(para, i) in paragraphs(form.league_wide_help)" :key="i" class="help-text">
               {{ para }}
             </p>
@@ -500,12 +493,51 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
           </div>
         </section>
 
-        <ResetHistory
-          :league-id="leagueId"
-          :fields="form.fields"
-          :refresh-key="historyKey"
-          @open="openReset"
-        />
+        <div class="toolbar card mb-4">
+          <div v-if="error" class="alert alert-error toolbar-alert">{{ error }}</div>
+          <div v-else-if="message && !dirty" class="alert alert-success toolbar-alert">
+            {{ message }}
+          </div>
+          <div class="card-body toolbar-body">
+            <div class="draft-state">
+              <template v-if="form.draft">
+                <strong>Draft, version {{ form.draft.version }}</strong>
+                <span class="text-muted">
+                  last saved by {{ form.draft.updated_by }} at
+                  {{ formatTime(form.draft.updated_at) }}
+                </span>
+              </template>
+              <strong v-else>No draft yet: these are the game's defaults.</strong>
+              <span v-if="dirty" class="badge badge-warning">Unsaved changes</span>
+              <span v-if="problems" class="badge badge-danger">
+                {{ problems }} to fix
+              </span>
+              <span v-if="advisories" class="badge badge-warning">
+                {{ advisories }} below the usual minimum
+              </span>
+            </div>
+            <div class="actions">
+              <button v-if="form.draft" class="btn btn-secondary btn-sm" @click="discard">
+                Discard draft
+              </button>
+              <button
+                class="btn btn-primary btn-sm"
+                :disabled="saving || !dirty || problems > 0"
+                @click="save"
+              >
+                {{ saving ? 'Saving...' : 'Save draft' }}
+              </button>
+              <button
+                class="btn btn-danger btn-sm perform"
+                :disabled="!!performBlocked"
+                :title="performBlocked"
+                @click="performing = true"
+              >
+                PERFORM RESET
+              </button>
+            </div>
+          </div>
+        </div>
 
         <ResetPerformDialog
           v-if="performing && form.draft"
@@ -552,10 +584,52 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
   gap: 1rem;
 }
 
+.settings-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.settings-bar h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.fold {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fold h3 {
+  margin: 0;
+}
+
+.fold-mark {
+  width: 1rem;
+  color: var(--color-text-muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+/* The draft's state and what to do with it, held at the foot of the screen. */
 .toolbar {
   position: sticky;
-  top: 0;
+  bottom: 0;
   z-index: 5;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .toolbar-body {
@@ -567,7 +641,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
 }
 
 .toolbar-alert {
-  margin: 0 1rem 1rem;
+  margin: 1rem 1rem 0;
 }
 
 .draft-state {
