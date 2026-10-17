@@ -4,6 +4,52 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-17
+
+### Added
+- **Reset a game from the console.** A league's Game reset page lists every
+  setting of the game's own reset editor (BRE and FE), in its order, with the
+  game's help, default and limits and our notes where they disagree. An admin
+  saves a draft, then PERFORM RESET types it into `<EXE> RESET` through
+  sr-harness rather than writing `GAME.DAT`, which is checksummed. The hub
+  takes the processing lock, backs up the game folder (the last 5 are kept),
+  reads both editor pages back against the draft before saving, and on any
+  failure restores the folder byte for byte. A PLANETARY run then sends the
+  Game Start. Advised minimums warn rather than refuse; a typed league code
+  confirms. Rehearsed on a copy of production's 015B and 015F.
+- **Reset history**, on the reset page and the league page (admins only).
+  Every Game Start the hub passes is recorded: it confirms the console reset
+  before it field by field, or lists what disagrees, or is kept as a reset
+  seen in packets. `backfill_reset_history.py` reads the packets already on
+  disk. A row opens in place into its steps, editor log and what it changed.
+- **BRE Configupdate decoded.** Every reset setting but the start date, so
+  the form's "current" column shows the league's live settings. It fills in
+  at each league's first Configupdate after upgrading.
+- **A note on dates and timezones** on the reset form: the hub's zone, and
+  that each BBS applies the dates on its own clock.
+
+### Fixed
+- **Processing runs named no league.** A run takes every league with work,
+  so its `league_id` was never set and the League column always read "-".
+  Runs now report `leagues` (e.g. `["015B", "015F"]`) from the packets they
+  moved and the files they made; `league_name` is the same list joined.
+- **A run's scores looked incomplete.** The Score Files tab listed cards by
+  filename alone, so a two-league run showed two `BBSSCORE.ANS` with nothing
+  to tell them apart. Files are now grouped by league.
+- **Packets counted as waiting after their download.** 1,991 rows from
+  11-12 January 2026 have a download time but `is_downloaded` false; a
+  download time now counts, and migration `e7b3d1a9c524` sets the flag.
+- **Sticky headers and toolbars never stuck**: the main content area was its
+  own scroll container though the window is what scrolls.
+
+### Upgrading
+- Four migrations (`alembic upgrade head`): `b6d2e8f4a170`, `d4a9c2e7b815`,
+  `e7b3d1a9c524`, `a3c8e1f6d092`.
+- New runtime dependency: `sr-harness` v0.1.1 (with `pyte`, `wcwidth`),
+  installed from gitea. Install `requirements.txt` before restarting.
+- Startup now settles any reset a restart interrupted; with none, it does
+  nothing.
+
 ## [0.7.1] - 2026-10-14
 
 ### Changed
