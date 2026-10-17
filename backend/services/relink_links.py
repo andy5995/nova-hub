@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.models.database import RelinkLink, SysopUser
 from backend.services.claim_links import EXPIRED, READY, SUPERSEDED, USED, hash_token
 
@@ -33,7 +34,7 @@ __all__ = ["READY", "USED", "EXPIRED", "SUPERSEDED", "issue", "find", "latest", 
 
 
 def state(link: RelinkLink, now: datetime | None = None) -> str:
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     if link.used_at:
         return USED
     if link.superseded_at:
@@ -48,7 +49,7 @@ def issue(db: Session, user: SysopUser, issued_by: str) -> tuple[str, RelinkLink
 
     Does not commit: the caller adds its audit record and commits both.
     """
-    now = datetime.utcnow()
+    now = utcnow()
     superseded = db.execute(
         update(RelinkLink)
         .where(
@@ -89,7 +90,7 @@ def use(db: Session, link: RelinkLink, ip: str) -> None:
 
     One conditional UPDATE, so two sign-ins racing on one link cannot both win.
     """
-    now = datetime.utcnow()
+    now = utcnow()
     marked = db.execute(
         update(RelinkLink)
         .where(

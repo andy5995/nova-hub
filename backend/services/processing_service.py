@@ -12,6 +12,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.models.database import League, LeagueMembership, Packet, ProcessingRun, ProcessingRunFile
 from backend.core.database import get_session
 from backend.logging_config import get_logger
@@ -901,8 +902,8 @@ class ProcessingService:
                     # Update existing packet with new metadata (file on disk)
                     existing.file_size = file_size
                     existing.checksum = checksum
-                    existing.uploaded_at = datetime.utcnow()
-                    existing.processed_at = datetime.utcnow()  # Mark as processed
+                    existing.uploaded_at = utcnow()
+                    existing.processed_at = utcnow()  # Mark as processed
                     existing.is_processed = True
                     existing.is_downloaded = False
                     existing.downloaded_at = None
@@ -920,7 +921,7 @@ class ProcessingService:
                         file_size=file_size,
                         checksum=checksum,
                         is_processed=True,  # Nodelists don't need processing
-                        processed_at=datetime.utcnow(),  # Mark as processed immediately
+                        processed_at=utcnow(),  # Mark as processed immediately
                         is_downloaded=False
                     )
                     self.db.add(packet)

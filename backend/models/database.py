@@ -5,7 +5,7 @@ SQLAlchemy ORM models for all database entities.
 """
 
 import secrets
-from datetime import datetime
+
 from typing import Optional
 
 import bcrypt
@@ -22,8 +22,9 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, relationship
+from sqlalchemy.orm import Session, declarative_base, relationship
+
+from backend.core.clock import utcnow
 
 # Base class for all models
 Base = declarative_base()
@@ -49,7 +50,7 @@ class SysopUser(Base):
     full_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     last_login = Column(DateTime, nullable=True)
 
     owned_clients = relationship("Client", secondary="client_owners", back_populates="owners",
@@ -84,7 +85,7 @@ class Client(Base):
     state = Column(String(50), nullable=True)
     country = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     last_seen = Column(DateTime, nullable=True)
     # The Verify step of onboarding: when the node first signed in with its
     # credentials, and first uploaded a packet. Set once, never moved.
@@ -124,7 +125,7 @@ class ClientOwner(Base):
                            primary_key=True)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"),
                        primary_key=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     created_by = Column(String(50), nullable=True)  # the admin's username
 
 
@@ -138,7 +139,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id = Column(Integer, primary_key=True, index=True)
-    at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    at = Column(DateTime, nullable=False, default=utcnow, index=True)
     actor_user_id = Column(Integer, nullable=True)  # None: the hub, or someone signed out
     actor = Column(String(100), nullable=True)
     action = Column(String(50), nullable=False, index=True)  # e.g. "owner.added"
@@ -167,7 +168,7 @@ class FtnAddress(Base):
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
     address = Column(String(50), nullable=False, unique=True, index=True)  # zone:net/node
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     client = relationship("Client", back_populates="ftn_addresses")
     memberships = relationship("LeagueMembership", back_populates="ftn_address")
@@ -208,7 +209,7 @@ class ClaimLink(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
     issued_by = Column(String(50), nullable=True)  # the admin's username
-    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    issued_at = Column(DateTime, nullable=False, default=utcnow)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     used_ip = Column(String(45), nullable=True)
@@ -242,7 +243,7 @@ class RelinkLink(Base):
                      index=True)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
     issued_by = Column(String(50), nullable=True)
-    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    issued_at = Column(DateTime, nullable=False, default=utcnow)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     used_ip = Column(String(45), nullable=True)
@@ -286,7 +287,7 @@ class Application(Base):
     league_ids = Column(JSON, nullable=False, default=list)  # leagues asked for
     note = Column(Text, nullable=True)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
     reviewed_by = Column(String(50), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
     decision_note = Column(Text, nullable=True)
@@ -308,7 +309,7 @@ class League(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Dosemu configuration
     dosemu_path = Column(String(255), nullable=True)
@@ -343,7 +344,7 @@ class LeagueMembership(Base):
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False)
-    joined_at = Column(DateTime, default=datetime.utcnow)
+    joined_at = Column(DateTime, default=utcnow)
     is_active = Column(Boolean, default=True)
     bbs_index = Column(Integer, nullable=True, index=True)  # BBS ID (1-255)
     # One of this client's own addresses; see FtnAddress.
@@ -384,7 +385,7 @@ class Packet(Base):
     checksum = Column(String(64), nullable=True)  # SHA256 hash
 
     # Status tracking
-    uploaded_at = Column(DateTime, default=datetime.utcnow, index=True)
+    uploaded_at = Column(DateTime, default=utcnow, index=True)
     downloaded_at = Column(DateTime, nullable=True)
     processed_at = Column(DateTime, nullable=True)
     processing_run_id = Column(Integer, ForeignKey("processing_runs.id"), nullable=True)
@@ -415,7 +416,7 @@ class ProcessingRun(Base):
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=True)
 
     # Run details
-    started_at = Column(DateTime, default=datetime.utcnow, index=True)
+    started_at = Column(DateTime, default=utcnow, index=True)
     completed_at = Column(DateTime, nullable=True)
     status = Column(String(20), default="running")  # running, completed, failed
 
@@ -611,9 +612,9 @@ class GameReset(Base):
     version = Column(Integer, nullable=False, default=1)
 
     created_by = Column(String(50), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     updated_by = Column(String(50), nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow)
     applied_by = Column(String(50), nullable=True)
     applied_at = Column(DateTime, nullable=True)
     game_start = Column(DateTime, nullable=True)
@@ -646,7 +647,7 @@ class ProcessingRunFile(Base):
     filename = Column(String(100), nullable=False)  # e.g., "BBSLAND.ANS", "routes.lst"
     file_data = Column(Text, nullable=True)  # Text content (ANSI files)
     file_size = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=utcnow, index=True)
 
     # Relationships
     processing_run = relationship("ProcessingRun", back_populates="files")
@@ -674,7 +675,7 @@ class SequenceAlert(Base):
     sequence_epoch = Column(Integer, nullable=True)
 
     # Alert tracking
-    detected_at = Column(DateTime, default=datetime.utcnow, index=True)
+    detected_at = Column(DateTime, default=utcnow, index=True)
     resolved_at = Column(DateTime, nullable=True)
     is_resolved = Column(Boolean, default=False)
 
@@ -692,7 +693,7 @@ class SystemSettings(Base):
     key = Column(String(100), unique=True, nullable=False, index=True)
     value = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 def create_default_admin(db: Session, username: str = "admin", password: str = "admin"):

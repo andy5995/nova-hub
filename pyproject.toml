@@ -53,5 +53,13 @@ dev = [
     "pytest-asyncio>=0.24.0",
 ]
 
+[tool.pytest.ini_options]
+# No async fixtures; this only silences pytest-asyncio's warning that it is unset.
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # python-jose 3.x calls datetime.utcnow() itself when it checks a token.
+    "ignore:datetime.datetime.utcnow:DeprecationWarning:jose",
+]
+
 [tool.uv]
 package = false

@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import get_current_client
@@ -180,7 +181,7 @@ async def upload_packet(
     db.add(packet)
     if client.first_upload_at is None:
         # The onboarding Verify step: this node is really exchanging packets
-        client.first_upload_at = datetime.utcnow()
+        client.first_upload_at = utcnow()
     db.commit()
 
     # Best-effort: an attack that cannot be traced must not fail the upload.

@@ -1,10 +1,11 @@
 """Service API authentication (OAuth2 client credentials)"""
 
-from datetime import datetime
+
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.rate_limiter import check_rate_limit, record_failed_attempt
 from backend.core.security import (
@@ -71,7 +72,7 @@ async def login_for_access_token(
         )
 
     # Update last_seen, and the onboarding Verify step's first sign-in
-    client.last_seen = datetime.utcnow()
+    client.last_seen = utcnow()
     if client.first_token_at is None:
         client.first_token_at = client.last_seen
     db.commit()

@@ -40,6 +40,7 @@ from pathlib import Path
 
 from sqlalchemy import func, text
 
+from backend.core.clock import utcnow
 from backend.logging_config import get_logger
 from backend.models.database import ProcessingRun, ProcessingRunFile
 
@@ -102,8 +103,8 @@ class RetentionService:
         return self.data_dir.joinpath(*LOG_SUBDIR)
 
     def cutoff(self, now: datetime | None = None) -> datetime:
-        # Rows are stamped with datetime.utcnow(), so compare in the same frame.
-        return (now or datetime.utcnow()) - timedelta(days=self.retention_days)
+        # Rows are stamped with utcnow(), so compare in the same frame.
+        return (now or utcnow()) - timedelta(days=self.retention_days)
 
     def preview(self) -> dict:
         """What a purge would do, without doing it.

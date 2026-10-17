@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.security import get_password_hash
 from backend.models.database import ClaimLink, Client, LeagueMembership, SysopUser
 from backend.services.games import game_for_letter
@@ -47,7 +48,7 @@ def hash_token(token: str) -> str:
 
 def state(link: ClaimLink, now: datetime | None = None) -> str:
     """ready, used, superseded or expired -- in that order of precedence."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     if link.used_at:
         return USED
     if link.superseded_at:
@@ -64,7 +65,7 @@ def issue(db: Session, client: Client, issued_by: str, user: SysopUser | None = 
     Returns (token, link, how many it superseded). The token is returned once,
     here; only its hash is kept. Commits unless told not to.
     """
-    now = datetime.utcnow()
+    now = utcnow()
     superseded = db.execute(
         update(ClaimLink)
         .where(
@@ -96,7 +97,7 @@ def issue(db: Session, client: Client, issued_by: str, user: SysopUser | None = 
 
 def ready_for(db: Session, client_id: int, user: SysopUser) -> ClaimLink | None:
     """A link for this BBS that is bound to this user and still claimable."""
-    now = datetime.utcnow()
+    now = utcnow()
     return (
         db.query(ClaimLink)
         .filter(
@@ -136,7 +137,7 @@ def claim(db: Session, link: ClaimLink, ip: str) -> str:
     the mark are one conditional UPDATE, so two simultaneous claims cannot both
     succeed: SQLite serialises the writes and the second matches no row.
     """
-    now = datetime.utcnow()
+    now = utcnow()
     marked = db.execute(
         update(ClaimLink)
         .where(

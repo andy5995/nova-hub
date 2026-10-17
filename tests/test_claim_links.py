@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import app, service_app, management_app
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.security import get_current_user, get_password_hash, verify_password
 from backend.models.database import (
@@ -145,7 +146,7 @@ def test_issue_gives_a_link_and_stores_only_its_hash(api, bbs):
     assert token not in link.token_hash
     assert link.issued_by == "admin"
     expires = datetime.fromisoformat(body["expires_at"].replace("Z", "+00:00"))
-    assert timedelta(hours=71) < expires.replace(tzinfo=None) - datetime.utcnow() <= timedelta(hours=72)
+    assert timedelta(hours=71) < expires.replace(tzinfo=None) - utcnow() <= timedelta(hours=72)
 
 
 def test_issuing_changes_nothing_for_the_bbs(api, bbs):
@@ -239,7 +240,7 @@ def test_an_expired_link_cannot_be_claimed(api, bbs):
     client, db = api
     token, _ = _issue(client, bbs)
     link = db.query(ClaimLink).one()
-    link.expires_at = datetime.utcnow() - timedelta(seconds=1)
+    link.expires_at = utcnow() - timedelta(seconds=1)
     db.commit()
 
     assert client.get(f"{CLAIM}/{token}").json()["state"] == "expired"

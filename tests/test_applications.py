@@ -8,7 +8,7 @@ rejection's note reaches the sysop; a BBS's later league requests need no new
 credentials; and the Verify step follows the node from approval to active.
 """
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import app, management_app, service_app
 from backend.core import rate_limiter
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.security import get_current_user, get_current_user_optional
 from backend.models.database import (
@@ -490,7 +491,7 @@ def test_the_stage_follows_the_node(hub):
     assert client.first_token_at is not None
     assert applications.stage(db, client) == "first_token"
 
-    client.first_upload_at = datetime.utcnow()
+    client.first_upload_at = utcnow()
     db.commit()
     assert applications.stage(db, client) == "active"
-    assert applications.stage(db, client, now=datetime.utcnow() + timedelta(days=3)) == "first_upload"
+    assert applications.stage(db, client, now=utcnow() + timedelta(days=3)) == "first_upload"

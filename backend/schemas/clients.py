@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 def _validate_location(value: Optional[str]) -> Optional[str]:
@@ -89,8 +89,7 @@ class ClientResponse(BaseModel):
     packets_sent_24h: int = 0
     packets_received_24h: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ClientCreatedResponse(BaseModel):
@@ -186,8 +185,7 @@ class ClientDetailResponse(BaseModel):
     # A claim link bound to the viewer is waiting for them to collect
     claim_waiting: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MembershipInfo(BaseModel):
@@ -200,8 +198,7 @@ class MembershipInfo(BaseModel):
     joined_at: datetime
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ClientListResponse(BaseModel):

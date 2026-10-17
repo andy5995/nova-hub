@@ -23,6 +23,7 @@ from typing import Dict, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.logging_config import get_logger
 from backend.models.database import GameReset, League, Packet
 from backend.services import bre_packet
@@ -80,7 +81,7 @@ def record_game_start(db: Session, league: League, packet: Packet,
     # When the hub's game wrote it: a Game Start comes from the coordinator,
     # the hub. Not uploaded_at, which a reused row keeps from its first packet;
     # 013B's Game Starts of 15 Oct came out dated 11 Jan and confirmed nothing.
-    seen = packet.processed_at or packet.uploaded_at or datetime.utcnow()
+    seen = packet.processed_at or packet.uploaded_at or utcnow()
     pending = (db.query(GameReset)
                .filter(GameReset.league_id == league.id,
                        GameReset.source == "console",

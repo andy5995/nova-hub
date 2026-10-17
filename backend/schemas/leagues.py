@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from backend.services.games import GAME_LETTERS
 
@@ -68,8 +68,7 @@ class LeagueResponse(BaseModel):
     is_active: bool
     member_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FtnAddressRef(BaseModel):
@@ -98,8 +97,7 @@ class MemberResponse(BaseModel):
     joined_at: Optional[str] = None
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LeagueStats(BaseModel):
@@ -127,8 +125,7 @@ class LeagueDetailResponse(BaseModel):
     stats: LeagueStats
     nodelist: Optional[NodelistInfo] = None  # None until one has been generated
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AddMemberRequest(BaseModel):

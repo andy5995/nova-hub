@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.logging_config import get_logger
 from backend.models.database import (
     AttackSighting, League, LeagueGameSettings, Packet, TrafficSighting,
@@ -44,7 +45,7 @@ NODELIST_PREFIXES = ("BRNODES.", "FENODES.")   # stored as packets, but text
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return utcnow()
 
 
 # ── recording ─────────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ def record_safely(db: Session, packet: Packet, content: bytes) -> int:
 
 def _remember_settings(db, league, packet, s: bre_packet.LeagueSettings):
     # A Configupdate comes from the hub's game; see history.record_game_start.
-    seen = packet.processed_at or packet.uploaded_at or datetime.utcnow()
+    seen = packet.processed_at or packet.uploaded_at or utcnow()
     row = db.get(LeagueGameSettings, league.id)
     if row is not None and row.seen_at and row.seen_at > seen:
         return      # an older packet being backfilled; keep the newer settings

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProcessingRunResponse(BaseModel):
@@ -22,8 +22,7 @@ class ProcessingRunResponse(BaseModel):
                         "packets it moved or whose score and listing files it made")
     league_name: Optional[str] = Field(None, description="The same leagues, comma-separated")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProcessingRunPacket(BaseModel):
@@ -42,8 +41,7 @@ class ProcessingRunFile(BaseModel):
     file_data: Optional[str] = None
     file_data_html: Optional[str] = None  # Converted ANSI to HTML
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProcessingRunDetail(BaseModel):
@@ -65,5 +63,4 @@ class ProcessingRunDetail(BaseModel):
     routes_files: List[ProcessingRunFile] = []
     bbsinfo_files: List[ProcessingRunFile] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

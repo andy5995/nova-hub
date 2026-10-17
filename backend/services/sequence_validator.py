@@ -1,11 +1,12 @@
 # backend/services/sequence_validator.py
 
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import sqlalchemy as sa
 from sqlalchemy import text
 
+from backend.core.clock import utcnow
 from backend.models.database import SequenceAlert
 from backend.logging_config import get_logger
 from backend.services.sequence_epoch import SEQUENCE_RANGE, build_timeline
@@ -257,7 +258,7 @@ class SequenceValidator:
         """
         if not self.max_age_days:
             return None
-        return datetime.utcnow() - timedelta(days=self.max_age_days)
+        return utcnow() - timedelta(days=self.max_age_days)
 
     @staticmethod
     def _usable_deltas(ordered: list[int], reset_starts: set) -> list[int]:
@@ -521,7 +522,7 @@ class SequenceValidator:
                 continue
 
             alert.is_resolved = True
-            alert.resolved_at = datetime.utcnow()
+            alert.resolved_at = utcnow()
             alert.resolution_note = note
             resolved_count += 1
             logger.info(

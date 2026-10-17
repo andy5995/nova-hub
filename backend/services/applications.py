@@ -33,6 +33,7 @@ from typing import Optional
 from fastapi import Request
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.security import get_password_hash
 from backend.models.database import (
     Application,
@@ -164,7 +165,7 @@ def withdraw(db: Session, user: SysopUser, application: Application,
     if application.status != PENDING:
         raise Refused(f"This application has already been {application.status}.")
     application.status = WITHDRAWN
-    application.reviewed_at = datetime.utcnow()
+    application.reviewed_at = utcnow()
     audit.record(db, "application.withdrawn", actor=user, target=application, request=request)
     db.commit()
     db.refresh(application)
@@ -178,7 +179,7 @@ def reject(db: Session, admin: SysopUser, application: Application, note: Option
     _require_pending(application)
     application.status = REJECTED
     application.reviewed_by = admin.username
-    application.reviewed_at = datetime.utcnow()
+    application.reviewed_at = utcnow()
     application.decision_note = _clean(note)
     audit.record(db, "application.rejected", actor=admin, target=application,
                  detail=application.decision_note, request=request)
@@ -231,7 +232,7 @@ def approve(db: Session, admin: SysopUser, application: Application, grants: lis
         application.status = APPROVED
         application.client = client
         application.reviewed_by = admin.username
-        application.reviewed_at = datetime.utcnow()
+        application.reviewed_at = utcnow()
         application.decision_note = _clean(note)
         application.granted = granted
         db.flush()
@@ -400,7 +401,7 @@ def stage(db: Session, client: Client, now: Optional[datetime] = None) -> str:
     node that has gone quiet drops back to first_upload, which is the thing
     an admin wants to notice.
     """
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     if client.first_upload_at:
         if client.last_seen and (now - client.last_seen).total_seconds() < ACTIVE_WITHIN_HOURS * 3600:
             return "active"

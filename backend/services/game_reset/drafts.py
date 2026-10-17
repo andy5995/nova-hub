@@ -5,11 +5,12 @@ values into the game's editor, and an over-max number or a letter the field
 doesn't take would throw it out of step. So it rejects rather than clamps, and
 returns every problem at once for the form to show beside its field.
 """
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.models.database import GameReset, League
 from backend.services.game_reset.fields import (
     CHOICE, DATE, NUMBER, TOGGLE, defaults, fields_for,
@@ -130,7 +131,7 @@ def save_draft(db: Session, league: League, settings: dict, notes: Optional[str]
     silently overwrite their changes.
     """
     draft = current_draft(db, league)
-    now = datetime.utcnow()
+    now = utcnow()
     if draft is None:
         if base_version is not None:
             raise DraftConflict("The draft you were editing has been discarded "

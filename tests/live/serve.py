@@ -100,7 +100,7 @@ def ensure_admin(data_dir: Path) -> str | None:
     """Create an admin user with a fresh random password, or leave one alone."""
     import bcrypt
     import sqlite3
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     db = data_dir / "nova-hub.db"
     conn = sqlite3.connect(db)
@@ -116,7 +116,7 @@ def ensure_admin(data_dir: Path) -> str | None:
         conn.execute(
             "INSERT INTO sysop_users (username, hashed_password, is_active, "
             "is_superuser, created_at) VALUES (?, ?, 1, 1, ?)",
-            ("admin", hashed, datetime.utcnow().isoformat()),
+            ("admin", hashed, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()),
         )
         conn.commit()
         return password

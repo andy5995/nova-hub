@@ -5,7 +5,7 @@ Provides authentication and authorization for both Service API (OAuth2)
 and Management API (session-based JWT).
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 import bcrypt
@@ -14,6 +14,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 
@@ -91,9 +92,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode = data.copy()
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings["access_token_expire_minutes"])
+        expire = utcnow() + timedelta(minutes=settings["access_token_expire_minutes"])
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings["secret_key"], algorithm=settings["algorithm"])

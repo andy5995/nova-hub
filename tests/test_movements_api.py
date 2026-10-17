@@ -5,7 +5,7 @@ are written straight into the table so the shape of the answer is the only thing
 under test.
 """
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import app, service_app, management_app
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.security import get_current_user
 from backend.models.database import (
@@ -88,7 +89,7 @@ def seed(db, items, league_name="Test 900B", when=None):
         db.add(ProcessingRunItem(
             processing_run_id=run.id,
             league_id=league.id,
-            occurred_at=(when or datetime.utcnow()) - timedelta(days=days_ago),
+            occurred_at=(when or utcnow()) - timedelta(days=days_ago),
             direction=direction,
             item_type=item_type,
             src_node=src,
@@ -204,7 +205,7 @@ def test_filtering_by_league_keeps_leagues_apart(api):
     db.refresh(other)
     db.add(ProcessingRunItem(
         processing_run_id=run.id, league_id=other.id,
-        occurred_at=datetime.utcnow(), direction="in",
+        occurred_at=utcnow(), direction="in",
         item_type="Message", src_node=2, dst_node=1,
     ))
     db.commit()

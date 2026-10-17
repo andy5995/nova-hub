@@ -15,7 +15,7 @@ import sqlite3
 import sys
 import bcrypt
 import toml
-from datetime import datetime
+from datetime import datetime, timezone
 
 # --- Password resolution ---
 password = None
@@ -66,7 +66,7 @@ try:
             "System Administrator",
             1,  # is_active
             1,  # is_superuser
-            datetime.utcnow().isoformat()
+            datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         ))
 
         conn.commit()

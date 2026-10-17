@@ -30,6 +30,7 @@ from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.database import get_session
 from backend.logging_config import get_logger
 from backend.models.database import GameReset, League
@@ -91,7 +92,7 @@ def _find(folder: Path, name: str) -> Optional[Path]:
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return utcnow()
 
 
 def _stage(db: Session, reset: GameReset, stage: str):

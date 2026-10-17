@@ -4,13 +4,14 @@
 # project. These tests are the difference between a setting and a promise.
 
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from backend.core.clock import utcnow
 from backend.models.database import ProcessingRun, ProcessingRunFile
 from backend.services.retention_service import RetentionService
 
@@ -18,7 +19,7 @@ from backend.services.retention_service import RetentionService
 def _run(db, league, days_ago: int, log: str = "x" * 1000) -> ProcessingRun:
     run = ProcessingRun(
         league_id=league.id,
-        started_at=datetime.utcnow() - timedelta(days=days_ago),
+        started_at=utcnow() - timedelta(days=days_ago),
         status="completed",
         packets_processed=3,
         exit_code=0,
@@ -39,7 +40,7 @@ def _file(db, run, league, days_ago: int, data: str = "y" * 500) -> ProcessingRu
         filename="BBSLAND.ANS",
         file_data=data,
         file_size=len(data),
-        created_at=datetime.utcnow() - timedelta(days=days_ago),
+        created_at=utcnow() - timedelta(days=days_ago),
     )
     db.add(f)
     db.commit()

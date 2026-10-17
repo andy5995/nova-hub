@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import toml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -137,8 +137,7 @@ class Config(BaseModel):
     # Raw config for accessing per-league dosemu settings
     _raw: Dict[str, Any] = {}
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Dictionary-style access for backwards compatibility"""

@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import require_admin
@@ -57,7 +58,7 @@ async def list_attacks(
       rollover seen yet), `overdue` (past the due date, no result delivered), or `any`
     """
     hub_index = get_config().get("hub", {}).get("bbs_index", "01")
-    since = None if attack_id else datetime.utcnow() - timedelta(days=days)
+    since = None if attack_id else utcnow() - timedelta(days=days)
     found = attack_trace.journeys(db, hub_index, league_id=league_id, since=since,
                                   planet=planet, attack_id=attack_id, limit=2000)
     if stage:
