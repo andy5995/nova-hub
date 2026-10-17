@@ -66,6 +66,28 @@ def test_the_truncated_half_of_a_run_together_line_is_dropped_not_guessed():
     assert all(r["src"] and r["dst"] for r in t.items)
 
 
+def test_a_cursor_jump_does_not_run_a_node_into_the_next_paint():
+    """1->4240, from dev's run 3874; prod showed 1->31194 and 1->683.
+
+    The game wrote the destination, then jumped the cursor across the screen to
+    repaint another record's size. With the jump dropped the digits joined.
+    """
+    raw = (
+        b"Compress: Old: 1448  Size:   36  %: 97.5%  Type: Recon Update  "
+        b"\x1b[33m 1\x1b[m\x0f\x1b[37m\x1b[40m->\x1b[1m\x1b[33m\x1b[40m 4"
+        b"\x1b[18;22H240\x1b[m\x0f\x1b[37m\x1b[40m  \x1b[8C\x1b[1m\x1b[33m\x1b[40m65"
+    )
+    t = Transcript(raw)
+
+    assert t.moved() == {("out", "Recon Update", 1, 4)}
+
+
+def test_cursor_forward_is_spacing_not_a_break():
+    raw = b"Compress: Old: 1448  Size:   36  %: 97.5%  Type: Configupdate\x1b[3C1-> 2"
+
+    assert Transcript(raw).moved() == {("out", "Configupdate", 1, 2)}
+
+
 def test_repaints_do_not_multiply_the_traffic():
     """Screen repaints are the reason raw line counting is useless.
 

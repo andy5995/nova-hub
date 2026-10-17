@@ -20,7 +20,13 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const movements = ref<Movement[]>([])
 const summary = ref<MovementSummary | null>(null)
-const leagues = ref<Array<{ id: number; name: string }>>([])
+const leagues = ref<Array<{ id: number; name: string; full_id: string }>>([])
+// "015B Medusa Test League 015": two leagues can share a number and even a
+// name, one BRE and one FE, so the name alone doesn't say which.
+const leagueLabels = computed(() => new Map(leagues.value.map((l) => [l.id, `${l.full_id} ${l.name}`])))
+function leagueLabel(id: number | null, name?: string | null): string {
+  return (id !== null && leagueLabels.value.get(id)) || name || '-'
+}
 
 const days = ref(7)
 const leagueId = ref<number | undefined>(undefined)
@@ -173,7 +179,7 @@ watch([days, leagueId, direction, itemType, node], load)
               <div class="card-header"><h2>Between nodes</h2></div>
               <div class="card-body">
                 <div v-for="p in summary.by_pair" :key="`${p.src_node}-${p.dst_node}`" class="bar-row">
-                  <span class="font-mono pair">{{ p.src_node }} &rarr; {{ p.dst_node }}</span>
+                  <span class="font-mono pair">{{ p.src_node ?? '?' }} &rarr; {{ p.dst_node ?? '?' }}</span>
                   <span class="bar">
                     <span class="bar-fill" :style="{ width: `${(p.count / busiestPair) * 100}%` }"></span>
                   </span>
@@ -219,7 +225,7 @@ watch([days, leagueId, direction, itemType, node], load)
               <div class="filters">
                 <select v-model="leagueId" class="form-select">
                   <option :value="undefined">All leagues</option>
-                  <option v-for="l in leagues" :key="l.id" :value="l.id">{{ l.name }}</option>
+                  <option v-for="l in leagues" :key="l.id" :value="l.id">{{ leagueLabel(l.id, l.name) }}</option>
                 </select>
                 <select v-model="direction" class="form-select">
                   <option :value="undefined">Both directions</option>
@@ -264,14 +270,14 @@ watch([days, leagueId, direction, itemType, node], load)
                   </tr>
                   <tr v-for="m in movements" :key="m.id">
                     <td class="text-muted font-mono">{{ shortTime(m.occurred_at) }}</td>
-                    <td>{{ m.league_name || '-' }}</td>
+                    <td>{{ leagueLabel(m.league_id, m.league_name) }}</td>
                     <td>
                       <span class="badge" :class="m.direction === 'in' ? 'badge-info' : 'badge-secondary'">
                         {{ m.direction }}
                       </span>
                     </td>
                     <td>{{ m.item_type }}</td>
-                    <td class="font-mono">{{ m.src_node }} &rarr; {{ m.dst_node }}</td>
+                    <td class="font-mono">{{ m.src_node ?? '?' }} &rarr; {{ m.dst_node ?? '?' }}</td>
                     <td class="font-mono text-right">{{ m.size_after ?? '-' }}</td>
                     <td>
                       <router-link :to="`/processing/${m.processing_run_id}`" class="run-link">

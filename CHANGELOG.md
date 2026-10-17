@@ -4,6 +4,24 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Movements named boards that don't exist** (1->31194, 1->683 on prod).
+  The game paints its transcript as a screen: it wrote a destination, then
+  jumped the cursor to repaint another record, and dropping that jump joined
+  the two numbers. It could as easily have made a believable wrong node. A
+  cursor move now ends the line, and cursor-forward is a space, which also
+  recovers records the parser used to miss. `reparse_movements.py` rewrites
+  the rows of every run whose transcript is still held (dry run unless
+  `--apply`); in older runs a node over 255 becomes unknown, shown as `?`.
+- **Movements showed a league's name without its game**, so a BRE and an FE
+  league of the same name looked alike in the table and the filter. It now
+  reads "015B League 015", as Attacks and Traffic do.
+
+### Changed
+- The test suite runs with no warnings (it printed 2,067): `datetime.utcnow()`
+  is replaced by `backend.core.clock.utcnow()`, which gives the same naive UTC,
+  and Pydantic models use `ConfigDict`.
+
 ## [0.8.0] - 2026-10-17
 
 ### Added

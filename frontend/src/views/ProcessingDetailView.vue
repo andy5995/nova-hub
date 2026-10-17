@@ -171,7 +171,7 @@ function getSelectedFileContent() {
           <div v-for="group in movementsByPair" :key="`${group.src}-${group.dst}`" class="card moved-group">
             <div class="card-header">
               <h3 class="font-mono">
-                Node {{ group.src }} &rarr; Node {{ group.dst }}
+                Node {{ group.src ?? '?' }} &rarr; Node {{ group.dst ?? '?' }}
                 <span class="text-muted">({{ group.items.length }})</span>
               </h3>
             </div>
