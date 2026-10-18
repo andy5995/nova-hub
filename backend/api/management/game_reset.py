@@ -23,7 +23,7 @@ from backend.schemas.game_reset import (
 )
 from backend.services import audit
 from backend.services.game_reset import drafts, history, perform
-from backend.services.game_reset.fields import LEAGUE_WIDE_HELP, defaults, fields_for
+from backend.services.game_reset.fields import defaults, fields_for
 
 router = APIRouter()
 logger = get_logger(context="management_game_reset")
@@ -125,7 +125,6 @@ def _form(db: Session, league: League) -> GameResetForm:
                            help_title=f.help_title, help=f.help)
                 for f in fields_for(league.game_type)],
         defaults=defaults(league.game_type),
-        league_wide_help=LEAGUE_WIDE_HELP[league.game_type][1],
         draft=_draft(drafts.current_draft(db, league), league.game_type),
         last_applied=None if applied is None else ResetApplied(
             id=applied.id, settings=applied.settings, applied_by=applied.applied_by,

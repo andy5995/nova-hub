@@ -204,7 +204,6 @@ def test_form_has_every_field_and_no_draft(api):
     assert [f["label"] for f in body["fields"]] == [e[0] for e in BRE_EDITOR]
     assert body["defaults"] == defaults("B")
     assert body["draft"] is None and body["full_id"] == "015B"
-    assert body["league_wide_help"].startswith("Selecting this will send reset")
     tz = body["hub_timezone"]
     assert tz["name"] and re.fullmatch(r"[+-]\d\d:\d\d", tz["utc_offset"])
     assert tz["today"] == date.today().isoformat()

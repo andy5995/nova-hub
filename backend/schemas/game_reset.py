@@ -134,7 +134,6 @@ class GameResetForm(BaseModel):
     game_type: str
     fields: List[ResetField]
     defaults: Dict[str, Any]
-    league_wide_help: str
     draft: Optional[ResetDraft] = None
     last_applied: Optional[ResetApplied] = None
     observed: Optional[ObservedSettings] = None

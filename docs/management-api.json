@@ -2149,10 +2149,6 @@
             "title": "League Id",
             "type": "integer"
           },
-          "league_wide_help": {
-            "title": "League Wide Help",
-            "type": "string"
-          },
           "observed": {
             "anyOf": [
               {
@@ -2181,7 +2177,6 @@
           "game_type",
           "fields",
           "defaults",
-          "league_wide_help",
           "hub_timezone"
         ],
         "title": "GameResetForm",

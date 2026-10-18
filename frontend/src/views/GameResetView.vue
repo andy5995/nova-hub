@@ -47,7 +47,7 @@ const opened = ref<Record<string, boolean>>({})
 const historyEl = ref<HTMLElement | null>(null)
 
 function setAll(open: boolean) {
-  opened.value = Object.fromEntries([...GROUPS.map((g) => g.id), 'LeagueWide'].map((id) => [id, open]))
+  opened.value = Object.fromEntries(GROUPS.map((g) => g.id).map((id) => [id, open]))
 }
 
 const allOpen = computed(() => Object.values(opened.value).every(Boolean))
@@ -459,23 +459,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
                 </p>
               </div>
             </div>
-          </div>
-        </section>
-
-        <section class="card mb-4">
-          <button class="card-header fold" :aria-expanded="opened.LeagueWide" @click="opened.LeagueWide = !opened.LeagueWide">
-            <span class="chevron" :class="{ open: opened.LeagueWide }" aria-hidden="true"></span>
-            <h3>League-wide reset</h3>
-            <span class="text-muted small">always yes</span>
-          </button>
-          <div v-if="opened.LeagueWide" class="card-body field-help">
-            <p v-for="(para, i) in paragraphs(form.league_wide_help)" :key="i" class="help-text">
-              {{ para }}
-            </p>
-            <p class="our-note">
-              <strong>Note:</strong> the hub always answers yes. A reset of the hub's
-              game alone would be pointless: the hub has no players.
-            </p>
           </div>
         </section>
 

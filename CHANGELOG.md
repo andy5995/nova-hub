@@ -18,6 +18,10 @@ All notable changes to Nova Hub will be documented in this file.
   reads "015B League 015", as Attacks and Traffic do.
 
 ### Changed
+- The Game reset page no longer explains the editor's league-wide question.
+  The hub always answers yes, and anyone on the page is there for exactly
+  that, so the game's help for it said nothing useful. The form's
+  `league_wide_help` field is gone from the Management API.
 - The test suite runs with no warnings (it printed 2,067): `datetime.utcnow()`
   is replaced by `backend.core.clock.utcnow()`, which gives the same naive UTC,
   and Pydantic models use `ConfigDict`.

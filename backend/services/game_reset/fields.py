@@ -202,9 +202,6 @@ CATALOGUE = {
     "F": _with_help(_FE, help_text.FE),
 }
 
-# Said after the editor closes, on the HOST only. Every reset answers yes.
-LEAGUE_WIDE_HELP = {"B": help_text.BRE["league_wide"], "F": help_text.FE["league_wide"]}
-
 
 def fields_for(game_type: str) -> tuple:
     try:

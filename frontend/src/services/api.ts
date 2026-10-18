@@ -380,7 +380,6 @@ export interface GameResetForm {
   game_type: string
   fields: ResetField[]
   defaults: Record<string, ResetValue>
-  league_wide_help: string
   draft: ResetDraft | null
   last_applied: {
     id: number
