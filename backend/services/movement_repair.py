@@ -1,7 +1,7 @@
 """
 Re-read stored transcripts into movement rows, after a parser fix.
 
-Until 0.8.1 the parser dropped cursor moves without a break, so a destination
+Until 0.9.0 the parser dropped cursor moves without a break, so a destination
 could run into digits the game painted elsewhere (1->4240 on dev; 1->31194 and
 1->683 on prod), and a record spaced with cursor-forward was lost. A run whose
 transcript is still held is re-parsed and its rows rewritten. Each row keeps

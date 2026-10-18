@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-19
+
 ### Added
 - **Sysops rotate their own BBS's secret.** Regenerate Secret on the client
   page is no longer admin-only: a BBS's owners have it too. It offers to keep
@@ -19,6 +21,8 @@ All notable changes to Nova Hub will be documented in this file.
 - One migration (`d4f1b7c2e980`): three nullable columns on `clients`.
 - Access tokens issued before this release have no issue time, so the first
   rotation that stops a BBS's old secret ends them too, as intended.
+- Correct the stored Movements: `.venv/bin/python reparse_movements.py` shows
+  what it would change; run it again with `--apply`.
 
 ### Fixed
 - **Movements named boards that don't exist** (1->31194, 1->683 on prod).

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Re-read stored transcripts into the Movements rows, after the 0.8.1 parser fix.
+Re-read stored transcripts into the Movements rows, after the 0.9.0 parser fix.
 
 The parser used to join a node number to digits the game painted elsewhere on
 the screen (1->31194), and to lose records spaced with cursor-forward. Every
