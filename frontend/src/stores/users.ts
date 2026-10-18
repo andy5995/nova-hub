@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { usersApi } from '@/services/api'
+import { usersApi, apiError } from '@/services/api'
 
 export type { User } from '@/stores/auth'
 import type { User } from '@/stores/auth'
@@ -20,8 +20,7 @@ export const useUsersStore = defineStore('users', () => {
       const response = await usersApi.list()
       users.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load users'
+      error.value = apiError(err, 'Failed to load users')
     } finally {
       loading.value = false
     }
@@ -40,8 +39,7 @@ export const useUsersStore = defineStore('users', () => {
       await loadUsers()
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to create user'
+      error.value = apiError(err, 'Failed to create user')
       return false
     } finally {
       loading.value = false
@@ -61,8 +59,7 @@ export const useUsersStore = defineStore('users', () => {
       await loadUsers()
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to update user'
+      error.value = apiError(err, 'Failed to update user')
       return false
     } finally {
       loading.value = false
@@ -78,8 +75,7 @@ export const useUsersStore = defineStore('users', () => {
       await loadUsers()
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to delete user'
+      error.value = apiError(err, 'Failed to delete user')
       return false
     } finally {
       loading.value = false

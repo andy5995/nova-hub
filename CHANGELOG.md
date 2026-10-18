@@ -4,6 +4,34 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **The dashboard's 24-hour cards always said 0.** Packets and processing
+  runs in the last day are now counted (for a sysop, their own).
+- **A league's "processed" and "runs" counts always said 0.** They counted a
+  flag only nodelists ever set and a run column no run fills in. They now
+  count packets with a processed time, and the runs that moved or made
+  something for the league. Processing sets the flag from now on.
+- The activity chart is one query, not one an hour (168 for the week), and
+  the activity feed no longer looks up clients a packet at a time. It also
+  reads the hub's index from the config rather than assuming `01`.
+- `run.py --config` passes the file on to the app it starts; processing
+  re-reads that file each batch, not whatever `config.toml` is in the
+  working directory.
+- `purge_retention.py` reaches the dosemu transcripts on disk, as the
+  hub's own daily pass does, and reports them.
+- `/health` gives 503 when the database fails, and no longer returns the
+  error text to an unauthenticated caller.
+- Signing out reloads the page, so nothing the last session loaded is still
+  in memory for the next person to sign in. Form errors that FastAPI reports
+  as a list read as sentences in every view.
+
+### Changed
+- `deploy/nova-hub.service.j2` adds `NoNewPrivileges`, `PrivateTmp`,
+  `ProtectSystem=full` and `UMask=0077`, and `deploy.sh` makes its database
+  backup readable by the hub's user only. The unit file is installed by the
+  playbook, not `deploy.sh`, so a running hub keeps its unit until that is
+  re-run or the file is copied by hand.
+
 ## [0.9.0] - 2026-10-19
 
 ### Added

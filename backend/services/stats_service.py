@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
+from backend.core.config import get_config
 from backend.models.database import Client, League, LeagueMembership, Packet, ProcessingRun, SequenceAlert
 
 
@@ -42,9 +44,20 @@ class StatsService:
         active_clients = clients.filter(Client.is_active == True).scalar()
         active_leagues = leagues.filter(League.is_active == True).scalar()
         pending_alerts = alerts.filter(SequenceAlert.resolved_at == None).scalar()
+        # The dashboard has always had cards for these; nothing filled them in.
+        day_ago = utcnow() - timedelta(days=1)
+        packets_24h = self._packets(
+            self.db.query(func.count(Packet.id)).filter(Packet.uploaded_at >= day_ago)).scalar()
+        runs = self.db.query(func.count(ProcessingRun.id)).filter(ProcessingRun.started_at >= day_ago)
+        run_clause = self.scope.run_clause() if self.scope else None
+        if run_clause is not None:
+            runs = runs.filter(run_clause)
+        processing_runs_24h = runs.scalar()
 
         return {
             "total_packets": total_packets or 0,
+            "packets_24h": packets_24h or 0,
+            "processing_runs_24h": processing_runs_24h or 0,
             "total_clients": total_clients or 0,
             "active_clients": active_clients or 0,
             "active_leagues": active_leagues or 0,
@@ -58,6 +71,20 @@ class StatsService:
             .order_by(Packet.uploaded_at.desc()).limit(limit).all()
         )
 
+        # Who each packet was from or for, in three queries for the lot rather
+        # than up to four a packet.
+        client_ids = {c for p in packets for c in (p.source_client_id, p.dest_client_id) if c}
+        league_ids = {p.league_id for p in packets}
+        members = (self.db.query(LeagueMembership)
+                   .filter(LeagueMembership.league_id.in_(league_ids)).all()) if league_ids else []
+        client_ids |= {m.client_id for m in members}
+        clients = ({c.id: c for c in self.db.query(Client).filter(Client.id.in_(client_ids))}
+                   if client_ids else {})
+        by_station = {}
+        for m in sorted(members, key=lambda m: m.id, reverse=True):
+            by_station[(m.league_id, m.bbs_index)] = m.client_id    # the oldest row wins
+        hub = get_config().hub.bbs_index.upper()
+
         activity = []
         for packet in packets:
             # Determine if this is an upload or download
@@ -65,29 +92,17 @@ class StatsService:
             # Download: packet from hub to remote BBS
 
             # Try to get client from packet's foreign keys first
-            client = None
-            if packet.source_client_id:
-                client = self.db.query(Client).filter(Client.id == packet.source_client_id).first()
-            elif packet.dest_client_id:
-                client = self.db.query(Client).filter(Client.id == packet.dest_client_id).first()
+            client = clients.get(packet.source_client_id or packet.dest_client_id)
 
             # If no client found via foreign keys, try looking up via LeagueMembership
             if not client:
-                membership = (
-                    self.db.query(LeagueMembership)
-                    .filter(
-                        LeagueMembership.league_id == packet.league_id,
-                        or_(
-                            LeagueMembership.bbs_index == int(packet.source_bbs_index, 16),
-                            LeagueMembership.bbs_index == int(packet.dest_bbs_index, 16),
-                        )
-                    )
-                    .first()
-                )
-                if membership:
-                    client = self.db.query(Client).filter(Client.id == membership.client_id).first()
+                for index in (packet.source_bbs_index, packet.dest_bbs_index):
+                    cid = by_station.get((packet.league_id, int(index, 16)))
+                    if cid is not None:
+                        client = clients.get(cid)
+                        break
 
-            activity_type = "upload" if packet.source_bbs_index != "01" else "download"
+            activity_type = "upload" if packet.source_bbs_index.upper() != hub else "download"
             client_name = client.bbs_name if client else f"BBS {packet.source_bbs_index}"
             league_name = f"{packet.league.game_type} League {packet.league.league_id}"
             route = f"{packet.source_bbs_index} → {packet.dest_bbs_index}"
@@ -116,26 +131,15 @@ class StatsService:
         now = datetime.now()
         start = now - timedelta(hours=hours)
 
-        # Group by hour
-        data = []
-        labels = []
-
-        for i in range(hours):
-            hour_start = start + timedelta(hours=i)
-            hour_end = hour_start + timedelta(hours=1)
-
-            count = (
-                self._packets(self.db.query(func.count(Packet.id)))
-                .filter(
-                    and_(
-                        Packet.uploaded_at >= hour_start, Packet.uploaded_at < hour_end
-                    )
-                )
-                .scalar()
-            )
-
-            data.append(count or 0)
-            labels.append(hour_start.strftime("%H:%M"))
+        # One query for the window, bucketed here: it was one query an hour.
+        times = self._packets(
+            self.db.query(Packet.uploaded_at)
+            .filter(and_(Packet.uploaded_at >= start, Packet.uploaded_at < now))
+        ).all()
+        data = [0] * hours
+        for (at,) in times:
+            data[min(int((at - start).total_seconds() // 3600), hours - 1)] += 1
+        labels = [(start + timedelta(hours=i)).strftime("%H:%M") for i in range(hours)]
 
         return labels, data
 

@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
-from sqlalchemy import text
+from sqlalchemy import exists, or_, text
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
@@ -170,14 +170,24 @@ async def get_league(
     # Get statistics
     stats = LeagueStats(
         total_packets=db.query(Packet).filter(Packet.league_id == league_id).count(),
+        # processed_at, not is_processed: only nodelists ever set the flag, so
+        # this said 0 for every league with years of traffic.
         processed_packets=db.query(Packet)
         .filter(
             Packet.league_id == league_id,
-            Packet.is_processed == True,
+            Packet.processed_at.isnot(None),
         )
         .count(),
+        # A run takes every league at once and never sets its league_id; it is
+        # this league's by what it moved or made (as Scope.run_clause).
         processing_runs=db.query(ProcessingRun)
-        .filter(ProcessingRun.league_id == league_id)
+        .filter(or_(
+            ProcessingRun.league_id == league_id,
+            exists().where(Packet.processing_run_id == ProcessingRun.id,
+                           Packet.league_id == league_id),
+            exists().where(ProcessingRunFile.processing_run_id == ProcessingRun.id,
+                           ProcessingRunFile.league_id == league_id),
+        ))
         .count(),
     )
 

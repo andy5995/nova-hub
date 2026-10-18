@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { systemApi } from '@/services/api'
 
-const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
@@ -73,7 +72,9 @@ function isActive(path: string): boolean {
 
 async function handleLogout() {
   await authStore.logout()
-  router.push('/login')
+  // A full load, not router.push: every store still holds what this session
+  // saw, and the next person to sign in on this tab may see less.
+  window.location.assign('/login')
 }
 
 function toggleSidebar() {
