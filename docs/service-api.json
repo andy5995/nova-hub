@@ -74,14 +74,28 @@
       "Body_login_for_access_token_api_v1_auth_token_post": {
         "properties": {
           "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Your client ID provided by the hub administrator",
-            "title": "Client Id",
-            "type": "string"
+            "title": "Client Id"
           },
           "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Your client secret provided by the hub administrator",
-            "title": "Client Secret",
-            "type": "string"
+            "title": "Client Secret"
           },
           "grant_type": {
             "description": "Must be 'client_credentials'",
@@ -90,9 +104,7 @@
           }
         },
         "required": [
-          "grant_type",
-          "client_id",
-          "client_secret"
+          "grant_type"
         ],
         "title": "Body_login_for_access_token_api_v1_auth_token_post",
         "type": "object"
@@ -158,14 +170,12 @@
             "type": "string"
           },
           "received_at": {
-            "format": "date-time",
             "title": "Received At",
             "type": "string"
           },
           "retrieved_at": {
             "anyOf": [
               {
-                "format": "date-time",
                 "type": "string"
               },
               {
@@ -244,6 +254,10 @@
             "title": "Access Token",
             "type": "string"
           },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
           "token_type": {
             "default": "bearer",
             "title": "Token Type",
@@ -251,7 +265,8 @@
           }
         },
         "required": [
-          "access_token"
+          "access_token",
+          "expires_in"
         ],
         "title": "TokenResponse",
         "type": "object"
@@ -291,6 +306,11 @@
       }
     },
     "securitySchemes": {
+      "HTTPBasic": {
+        "description": "client_id and client_secret, as RFC 6749 2.3.1",
+        "scheme": "basic",
+        "type": "http"
+      },
       "OAuth2PasswordBearer": {
         "flows": {
           "password": {
@@ -314,7 +334,7 @@
   "paths": {
     "/api/v1/auth/token": {
       "post": {
-        "description": "OAuth2 token endpoint for client authentication\n\n**Grant Type:** client_credentials\n\n**Form Parameters:**\n- `grant_type`: Must be \"client_credentials\"\n- `client_id`: Your client ID\n- `client_secret`: Your client secret\n\n**Returns:** Access token valid for 24 hours\n\n**Example:**\n```bash\ncurl -X POST \"https://hub.example.com/service/api/v1/auth/token\" \\\n  -d \"grant_type=client_credentials\" \\\n  -d \"client_id=your_client_id\" \\\n  -d \"client_secret=your_secret\"\n```",
+        "description": "OAuth2 token endpoint for client authentication\n\n**Grant Type:** client_credentials\n\n**Form Parameters:**\n- `grant_type`: Must be \"client_credentials\"\n- `client_id`: Your client ID\n- `client_secret`: Your client secret\n\nOr send `client_id` and `client_secret` as HTTP Basic credentials\n(RFC 6749 2.3.1) and only `grant_type` in the form. Not both.\n\n**Returns:** An access token, and in `expires_in` how many seconds it lasts\n\n**Example:**\n```bash\ncurl -X POST \"https://hub.example.com/service/api/v1/auth/token\" \\\n  -d \"grant_type=client_credentials\" \\\n  -d \"client_id=your_client_id\" \\\n  -d \"client_secret=your_secret\"\n```",
         "operationId": "login_for_access_token_api_v1_auth_token_post",
         "requestBody": {
           "content": {
@@ -348,6 +368,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBasic": []
+          }
+        ],
         "summary": "Get Access Token",
         "tags": [
           "Service API - Authentication"
@@ -391,8 +416,24 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BF])$",
+              "pattern": "^(\\d{3})([BFbf])$",
               "title": "League Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -400,11 +441,17 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "The nodelist"
+          },
+          "304": {
+            "description": "Unchanged since the If-None-Match or If-Modified-Since given"
           },
           "422": {
             "content": {
@@ -438,7 +485,7 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BF])$",
+              "pattern": "^(\\d{3})([BFbf])$",
               "title": "League Id",
               "type": "string"
             }
@@ -499,7 +546,7 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BF])$",
+              "pattern": "^(\\d{3})([BFbf])$",
               "title": "League Id",
               "type": "string"
             }
@@ -517,11 +564,14 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "The packet"
           },
           "422": {
             "content": {
@@ -553,7 +603,7 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BF])$",
+              "pattern": "^(\\d{3})([BFbf])$",
               "title": "League Id",
               "type": "string"
             }
@@ -568,6 +618,17 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

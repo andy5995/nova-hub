@@ -84,7 +84,7 @@ async def list_runs(
         duration = None
         if run.completed_at:
             delta = run.completed_at - run.started_at
-            duration = f"{delta.seconds}s"
+            duration = f"{max(0, int(delta.total_seconds()))}s"
         leagues = leagues_of.get(run.id, [])
 
         run_list.append(
@@ -136,7 +136,7 @@ async def get_run(
     duration = None
     if run.completed_at:
         delta = run.completed_at - run.started_at
-        duration = f"{delta.seconds}s"
+        duration = f"{max(0, int(delta.total_seconds()))}s"
 
     leagues = _run_leagues(db, [run.id], scope)[run.id]
 
