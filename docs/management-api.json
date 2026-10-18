@@ -2528,6 +2528,7 @@
             "title": "Is Active"
           },
           "league_id": {
+            "pattern": "^\\d{3}$",
             "title": "League Id",
             "type": "string"
           },

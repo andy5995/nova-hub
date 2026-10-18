@@ -4,6 +4,36 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **The database enforces its references.** SQLite ignores foreign keys
+  unless asked on every connection, so every reference and `ON DELETE` in the
+  schema was decoration. The hub's engine now turns them on, runs in WAL mode
+  (client polls no longer wait on a processing run's writes) and waits up to
+  30 s for a lock rather than failing.
+
+### Fixed
+- **Deleting a league left rows behind**: its attack and traffic sightings,
+  game settings, resets and run items, all pointing at a league that was
+  gone. With foreign keys on, the delete would have failed outright. It now
+  clears every table that names the league, and a run that also carried
+  another league's packets leaves those packets in place.
+- League creation and deletion are in the audit log.
+- A new league's number must be three digits; anything else made a league
+  no packet could be addressed to.
+- `reset_database.py` stamps the new database at the current migration, so
+  the next `alembic upgrade head` doesn't replay them all.
+
+### Upgrading
+- One migration (`e7a2c4d9b153`), indexes only, so no table is rebuilt: the
+  client poll's index, the run lookups, and unique indexes for one league
+  per number and game, one membership per BBS per league, and one reset
+  under way at a time. It also clears two packets' references to processing
+  runs that no longer exist. Rehearsed on a copy of production: under a
+  second, both ways, and `foreign_key_check` is clean afterwards.
+- WAL keeps `nova-hub.db-wal` and `nova-hub.db-shm` beside the database.
+  Back up with `sqlite3 nova-hub.db ".backup <copy>"`, as `deploy.sh`
+  does; a plain copy of `nova-hub.db` alone can miss recent writes.
+
 ## [0.9.0] - 2026-10-19
 
 ### Added

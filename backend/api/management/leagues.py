@@ -203,6 +203,7 @@ async def get_league(
 @router.post("", response_model=LeagueResponse, summary="Create League")
 async def create_league(
     request: LeagueCreate,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -259,6 +260,9 @@ async def create_league(
         is_active=request.is_active if request.is_active is not None else True,
     )
     db.add(league)
+    db.flush()
+    audit.record(db, "league.created", actor=current_user, target=league,
+                 detail=league.name, request=http_request)
     db.commit()
     db.refresh(league)
 
@@ -372,6 +376,7 @@ async def update_league(
 async def delete_league(
     league_id: int,
     request: LeagueDeleteRequest,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -418,19 +423,33 @@ async def delete_league(
     )
     packet_filenames = [row[0] for row in result]
 
-    # Delete in FK dependency order using raw SQL to bypass SQLAlchemy relationship machinery
-    db.execute(text("DELETE FROM sequence_alerts WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("""
-        DELETE FROM processing_run_files
-        WHERE processing_run_id IN (
-            SELECT id FROM processing_runs WHERE league_id = :lid
-        )
-    """), {"lid": league_id})
-    db.execute(text("DELETE FROM processing_run_files WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM packets WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM processing_runs WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM league_memberships WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM leagues WHERE id = :lid"), {"lid": league_id})
+    # Delete in FK dependency order using raw SQL to bypass SQLAlchemy
+    # relationship machinery. Every table that names the league, or one of its
+    # packets or runs, goes first: with foreign keys enforced, anything left
+    # pointing at them fails the delete, and before they were it was orphaned.
+    # Recorded first, while the league is there to describe. The event keeps
+    # its id and name; it does not reference the row.
+    audit.record(db, "league.deleted", actor=current_user, target=league,
+                 detail=f"with {len(packet_filenames)} packets", request=http_request)
+    lid = {"lid": league_id}
+    packets = "SELECT id FROM packets WHERE league_id = :lid"
+    runs = "SELECT id FROM processing_runs WHERE league_id = :lid"
+    for statement in (
+        f"DELETE FROM attack_sightings WHERE league_id = :lid OR packet_id IN ({packets})",
+        f"DELETE FROM traffic_sightings WHERE league_id = :lid OR packet_id IN ({packets})",
+        f"DELETE FROM league_game_settings WHERE league_id = :lid OR packet_id IN ({packets})",
+        "DELETE FROM game_resets WHERE league_id = :lid",
+        "DELETE FROM sequence_alerts WHERE league_id = :lid",
+        f"DELETE FROM processing_run_items WHERE league_id = :lid OR processing_run_id IN ({runs})",
+        f"DELETE FROM processing_run_files WHERE league_id = :lid OR processing_run_id IN ({runs})",
+        # A run can carry other leagues' packets; they keep their rows.
+        f"UPDATE packets SET processing_run_id = NULL WHERE processing_run_id IN ({runs})",
+        "DELETE FROM packets WHERE league_id = :lid",
+        "DELETE FROM processing_runs WHERE league_id = :lid",
+        "DELETE FROM league_memberships WHERE league_id = :lid",
+        "DELETE FROM leagues WHERE id = :lid",
+    ):
+        db.execute(text(statement), lid)
     db.commit()
 
     # Clean up packet files from disk
@@ -438,6 +457,8 @@ async def delete_league(
 
     data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
     for filename in packet_filenames:
+        if Path(filename).name != filename:
+            continue        # never a path: every name passed parse_packet_filename
         for subdir in ("inbound", "outbound", "processed"):
             filepath = data_dir / "packets" / subdir / filename
             if filepath.exists():
