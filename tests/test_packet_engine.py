@@ -294,14 +294,23 @@ async def test_a_timed_out_dosemu_is_killed_with_everything_it_started(tmp_path)
 
     pid = int(pidfile.read_text())
     for _ in range(50):
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
+        if not _running(pid):
             break
         await asyncio.sleep(0.05)
     else:
         os.kill(pid, 9)
         pytest.fail("the game's process outlived the timeout")
+
+
+def _running(pid: int) -> bool:
+    """Alive and not a zombie. In a container with no init to reap orphans
+    (CI's), a killed process lingers as a zombie, which kill(pid, 0) still
+    finds."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except FileNotFoundError:
+        return False
+    return stat.rsplit(")", 1)[1].split()[0] not in ("Z", "X")
 
 
 # -- the reset's restore --------------------------------------------------------
