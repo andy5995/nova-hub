@@ -1262,16 +1262,22 @@ Validation Error
 
 **Regenerate Secret**
 
-Regenerate client OAuth2 secret (admin only)
+Regenerate client OAuth2 secret (an admin, or a sysop who owns the BBS)
+
+With no body, or `overlap_hours` 0, the old secret stops now, and so do
+the access tokens already issued with it. With `overlap_hours` (up to 72)
+the old secret keeps working that long, so the node isn't cut off before
+its config is edited.
 
 **Path Parameters:**
 - `client_id`: Database ID of the client
 
-**Returns:** New client secret (shown only once)
+**Returns:** New client secret (shown only once), and when the old one stops
 
 **Example:**
 ```bash
 curl -X POST "https://hub.example.com/management/api/v1/clients/1/regenerate-secret" \
+  -H "Content-Type: application/json" -d '{"overlap_hours": 24}' \
   -b cookies.txt
 ```
 
@@ -1280,6 +1286,10 @@ curl -X POST "https://hub.example.com/management/api/v1/clients/1/regenerate-sec
 **client_id**
   - Type: `integer`
   - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
 
 #### Responses
 

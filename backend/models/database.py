@@ -76,6 +76,12 @@ class Client(Base):
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(String(64), unique=True, nullable=False, index=True)
     client_secret = Column(String(128), nullable=False)
+    # A rotation can keep the replaced secret working for a few hours, and a
+    # rotation that stops it at once ends the tokens issued before it. See
+    # backend/services/client_secrets.py.
+    previous_client_secret = Column(String(128), nullable=True)
+    previous_secret_expires_at = Column(DateTime, nullable=True)
+    tokens_valid_after = Column(DateTime, nullable=True)
     bbs_name = Column(String(100), nullable=False)
     contact_email = Column(String(100), nullable=True)
     contact_name = Column(String(100), nullable=True)

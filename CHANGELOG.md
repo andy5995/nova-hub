@@ -4,6 +4,22 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Sysops rotate their own BBS's secret.** Regenerate Secret on the client
+  page is no longer admin-only: a BBS's owners have it too. It offers to keep
+  the old secret working for 24 hours (the API takes up to 72), so the node
+  isn't cut off before its config is edited, or to stop it now. Stopping it
+  now also ends the access tokens already issued, which otherwise live 24
+  hours: the usual reason to rotate in a hurry is a secret that got out. The
+  client page says until when the old secret works, and the audit log
+  records which was chosen. A claim link's new secret stops the old one the
+  same way.
+
+### Upgrading
+- One migration (`d4f1b7c2e980`): three nullable columns on `clients`.
+- Access tokens issued before this release have no issue time, so the first
+  rotation that stops a BBS's old secret ends them too, as intended.
+
 ### Fixed
 - **Movements named boards that don't exist** (1->31194, 1->683 on prod).
   The game paints its transcript as a screen: it wrote a destination, then

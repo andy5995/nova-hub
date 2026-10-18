@@ -1700,6 +1700,18 @@
             "title": "League Memberships",
             "type": "array"
           },
+          "old_secret_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Secret Until"
+          },
           "owners": {
             "default": [],
             "items": {
@@ -1839,6 +1851,18 @@
           "client_secret": {
             "title": "Client Secret",
             "type": "string"
+          },
+          "old_secret_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Secret Until"
           }
         },
         "required": [
@@ -3871,6 +3895,21 @@
           "status"
         ],
         "title": "ProcessingRunResponse",
+        "type": "object"
+      },
+      "RegenerateSecretRequest": {
+        "description": "How long the replaced secret keeps working",
+        "properties": {
+          "overlap_hours": {
+            "default": 0,
+            "description": "Hours the old secret keeps working beside the new one, so the node isn't cut off before its config is edited. 0 stops it now, and ends the access tokens already issued.",
+            "maximum": 72.0,
+            "minimum": 0.0,
+            "title": "Overlap Hours",
+            "type": "integer"
+          }
+        },
+        "title": "RegenerateSecretRequest",
         "type": "object"
       },
       "RejectRequest": {
@@ -7090,7 +7129,7 @@
     },
     "/api/v1/clients/{client_id}/regenerate-secret": {
       "post": {
-        "description": "Regenerate client OAuth2 secret (admin only)\n\n**Path Parameters:**\n- `client_id`: Database ID of the client\n\n**Returns:** New client secret (shown only once)\n\n**Example:**\n```bash\ncurl -X POST \"https://hub.example.com/management/api/v1/clients/1/regenerate-secret\" \\\n  -b cookies.txt\n```",
+        "description": "Regenerate client OAuth2 secret (an admin, or a sysop who owns the BBS)\n\nWith no body, or `overlap_hours` 0, the old secret stops now, and so do\nthe access tokens already issued with it. With `overlap_hours` (up to 72)\nthe old secret keeps working that long, so the node isn't cut off before\nits config is edited.\n\n**Path Parameters:**\n- `client_id`: Database ID of the client\n\n**Returns:** New client secret (shown only once), and when the old one stops\n\n**Example:**\n```bash\ncurl -X POST \"https://hub.example.com/management/api/v1/clients/1/regenerate-secret\" \\\n  -H \"Content-Type: application/json\" -d '{\"overlap_hours\": 24}' \\\n  -b cookies.txt\n```",
         "operationId": "regenerate_secret_api_v1_clients__client_id__regenerate_secret_post",
         "parameters": [
           {
@@ -7103,6 +7142,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RegenerateSecretRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

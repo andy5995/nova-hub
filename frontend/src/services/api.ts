@@ -134,8 +134,8 @@ export const clientsApi = {
   delete: (id: number) =>
     api.delete(`/clients/${id}`),
 
-  regenerateSecret: (id: number) =>
-    api.post(`/clients/${id}/regenerate-secret`),
+  regenerateSecret: (id: number, overlapHours: number) =>
+    api.post(`/clients/${id}/regenerate-secret`, { overlap_hours: overlapHours }),
 
   addFtnAddress: (id: number, address: string) =>
     api.post(`/clients/${id}/ftn-addresses`, { address }),

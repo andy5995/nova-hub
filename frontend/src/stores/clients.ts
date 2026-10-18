@@ -40,6 +40,7 @@ export interface ClientDetail {
   first_token_at?: string | null
   first_upload_at?: string | null
   claim_waiting?: boolean // a claim link bound to the viewer is waiting
+  old_secret_until?: string | null // a rotation kept the replaced secret working until then
 }
 
 // An FTN address this BBS holds, and the leagues whose membership uses it.
@@ -183,13 +184,16 @@ export const useClientsStore = defineStore('clients', () => {
     }
   }
 
-  async function regenerateSecret(id: number): Promise<string | null> {
+  async function regenerateSecret(
+    id: number,
+    overlapHours: number,
+  ): Promise<{ client_secret: string; old_secret_until: string | null } | null> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await clientsApi.regenerateSecret(id)
-      return response.data.client_secret
+      const response = await clientsApi.regenerateSecret(id, overlapHours)
+      return response.data
     } catch (err: unknown) {
       const axiosError = err as { response?: { data?: { detail?: string } } }
       error.value = axiosError.response?.data?.detail || 'Failed to regenerate secret'

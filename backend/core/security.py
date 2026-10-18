@@ -5,6 +5,7 @@ Provides authentication and authorization for both Service API (OAuth2)
 and Management API (session-based JWT).
 """
 
+import time
 from datetime import timedelta
 from typing import Optional
 
@@ -171,6 +172,11 @@ async def get_current_client(
     if client is None:
         raise credentials_exception
 
+    from backend.services.client_secrets import token_revoked
+
+    if token_revoked(client, payload.get("iat")):
+        raise credentials_exception
+
     if not client.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -202,7 +208,9 @@ def verify_client_credentials(client_id: str, client_secret: str, db: Session):
     if not client.is_active:
         return None
 
-    if not verify_password(client_secret, client.client_secret):
+    from backend.services.client_secrets import matches
+
+    if not matches(client, client_secret):
         return None
 
     return client
@@ -332,7 +340,9 @@ def create_service_token(client_id: str) -> str:
     Returns:
         JWT token string with type="service"
     """
-    return create_access_token(data={"sub": client_id, "type": "service"})
+    # iat lets a secret rotation end the tokens issued before it.
+    return create_access_token(data={"sub": client_id, "type": "service",
+                                     "iat": time.time()})
 
 
 def create_session_token(username: str) -> str:

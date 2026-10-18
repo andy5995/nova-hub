@@ -33,8 +33,8 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from backend.core.clock import utcnow
-from backend.core.security import get_password_hash
 from backend.models.database import ClaimLink, Client, LeagueMembership, SysopUser
+from backend.services import client_secrets
 from backend.services.games import game_for_letter
 
 LINK_TTL = timedelta(hours=72)
@@ -152,9 +152,8 @@ def claim(db: Session, link: ClaimLink, ip: str) -> str:
         db.rollback()
         raise NotClaimable(link.id)
 
-    secret = Client.generate_client_secret()
     client = db.get(Client, link.client_id)
-    client.client_secret = get_password_hash(secret)
+    secret = client_secrets.rotate(client)
     db.commit()
     db.refresh(link)
     return secret

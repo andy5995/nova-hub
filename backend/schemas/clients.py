@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _validate_location(value: Optional[str]) -> Optional[str]:
@@ -100,10 +100,19 @@ class ClientCreatedResponse(BaseModel):
     client_secret: str  # Plain text, shown only once
 
 
+class RegenerateSecretRequest(BaseModel):
+    """How long the replaced secret keeps working"""
+    overlap_hours: int = Field(0, ge=0, le=72, description=(
+        "Hours the old secret keeps working beside the new one, so the node isn't cut "
+        "off before its config is edited. 0 stops it now, and ends the access tokens "
+        "already issued."))
+
+
 class ClientSecretResponse(BaseModel):
     """Response when regenerating client secret"""
     client_id: str
     client_secret: str  # Plain text, shown only once
+    old_secret_until: Optional[datetime] = None  # None: the old secret has stopped
 
 
 class ClientStats(BaseModel):
@@ -184,6 +193,8 @@ class ClientDetailResponse(BaseModel):
     first_upload_at: Optional[datetime] = None
     # A claim link bound to the viewer is waiting for them to collect
     claim_waiting: bool = False
+    # A rotation kept the replaced secret working until then
+    old_secret_until: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

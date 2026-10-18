@@ -36,6 +36,7 @@ from backend.schemas.clients import (
     OwnerInfo,
     OwnerRequest,
     PacketHistoryItem,
+    RegenerateSecretRequest,
 )
 from backend.schemas.claim import (
     ClaimLinkCollected,
@@ -43,7 +44,7 @@ from backend.schemas.claim import (
     ClaimLinkRequest,
     ClaimLinkStatus,
 )
-from backend.services import applications, audit, claim_links
+from backend.services import applications, audit, claim_links, client_secrets
 from backend.services.stats_service import StatsService
 
 logger = get_logger(context="management_clients")
@@ -226,6 +227,7 @@ async def get_client(
         first_token_at=utc(client.first_token_at),
         first_upload_at=utc(client.first_upload_at),
         claim_waiting=claim_links.ready_for(db, client.id, scope.user) is not None,
+        old_secret_until=utc(client_secrets.old_secret_until(client)),
     )
 
 
@@ -525,39 +527,51 @@ async def collect_claim_link(
 async def regenerate_secret(
     client_id: int,
     http_request: Request,
-    current_user: SysopUser = Depends(require_admin),
+    body: Optional[RegenerateSecretRequest] = None,
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
-    Regenerate client OAuth2 secret (admin only)
+    Regenerate client OAuth2 secret (an admin, or a sysop who owns the BBS)
+
+    With no body, or `overlap_hours` 0, the old secret stops now, and so do
+    the access tokens already issued with it. With `overlap_hours` (up to 72)
+    the old secret keeps working that long, so the node isn't cut off before
+    its config is edited.
 
     **Path Parameters:**
     - `client_id`: Database ID of the client
 
-    **Returns:** New client secret (shown only once)
+    **Returns:** New client secret (shown only once), and when the old one stops
 
     **Example:**
     ```bash
     curl -X POST "https://hub.example.com/management/api/v1/clients/1/regenerate-secret" \\
+      -H "Content-Type: application/json" -d '{"overlap_hours": 24}' \\
       -b cookies.txt
     ```
     """
+    scope.require_client(client_id)
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    # Generate new secret
-    new_secret = Client.generate_client_secret()
-    client.client_secret = get_password_hash(new_secret)
-    audit.record(db, "client.secret_regenerated", actor=current_user, target=client,
+    overlap = body.overlap_hours if body else 0
+    new_secret = client_secrets.rotate(client, overlap)
+    until = client_secrets.old_secret_until(client)
+    audit.record(db, "client.secret_regenerated", actor=scope.user, target=client,
+                 detail=f"old secret works until {until:%Y-%m-%d %H:%M} UTC" if until
+                 else "old secret stopped",
                  request=http_request)
     db.commit()
 
-    logger.info(f"Regenerated secret for client {client.client_id} by {current_user.username}")
+    logger.info(f"Regenerated secret for client {client.client_id} by {scope.user.username}"
+                f" (overlap {overlap}h)")
 
     return ClientSecretResponse(
         client_id=client.client_id,
         client_secret=new_secret,  # Plain text, shown only once
+        old_secret_until=utc(until),
     )
 
 
