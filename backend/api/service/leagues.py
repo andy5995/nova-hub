@@ -15,7 +15,7 @@ from backend.core.security import get_current_client
 from backend.logging_config import get_logger
 from backend.models.database import Client, League, LeagueMembership, Packet
 from backend.services.games import LEAGUE_ID_REGEX, game_for_letter
-from backend.services.league_utils import parse_league_id
+from backend.services.league_utils import board_hex, parse_league_id
 from backend.services.processing_service import find_file_case_insensitive
 
 logger = get_logger(context="service_leagues")
@@ -176,11 +176,11 @@ async def download_nodelist(
     logger.info(f"Client {client.client_id} downloading nodelist: {nodelist_path.name}")
 
     # Mark the nodelist packet as downloaded
-    dest_bbs_hex = f"{membership.bbs_index:02X}"
+    dest_bbs_hex = board_hex(membership)
     nodelist_packet = (
         db.query(Packet)
         .filter(
-            Packet.filename == nodelist_path.name,
+            Packet.filename == nodelist_path.name.upper(),     # as generation stores it
             Packet.league_id == league.id,
             Packet.dest_bbs_index == dest_bbs_hex,
         )

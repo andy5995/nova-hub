@@ -62,30 +62,7 @@ async def lifespan(app: FastAPI):
     finally:
         recovery_db.close()
 
-    # Start packet watcher for hub-generated outbound packets
-    from backend.services.packet_service import PacketService
-    from backend.services.packet_watcher import WatcherService
     import asyncio
-
-    db_session = get_session()
-    watcher = None
-    try:
-        # Get the current event loop
-        loop = asyncio.get_running_loop()
-
-        packet_service = PacketService(db_session)
-        watcher = WatcherService(packet_service, config._raw, loop)
-        watcher.start()
-        app.state.watcher = watcher
-
-        # Process any existing files in watched directories
-        # (files that were there before the watcher started)
-        await watcher.process_pending_scans()
-
-    except Exception as e:
-        logger.exception(f"Failed to start packet watcher: {e}")
-    finally:
-        db_session.close()
 
     # Honour [processing] retention_days. Runs once at startup and daily after,
     # so a hub that is restarted often still prunes exactly once per day's worth
@@ -98,9 +75,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    if hasattr(app.state, "watcher") and app.state.watcher:
-        app.state.watcher.stop()
-
     task = getattr(app.state, "retention_task", None)
     if task is not None:
         task.cancel()

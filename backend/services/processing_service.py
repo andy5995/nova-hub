@@ -31,6 +31,9 @@ logger = get_logger(context="processing")
 # Global lock for processing
 _processing_lock = threading.Lock()
 _processing_task: Optional[asyncio.Task] = None
+# Asked for while a batch ran. There is no poll loop: a packet uploaded during a
+# run would otherwise wait for the next upload, which can be a day away.
+_rerun = False
 
 
 def find_file_case_insensitive(directory: Path, filename: str) -> Optional[Path]:
@@ -58,11 +61,12 @@ def find_file_case_insensitive(directory: Path, filename: str) -> Optional[Path]
 
 def trigger_processing():
     """Trigger background processing (non-blocking)"""
-    global _processing_task
+    global _processing_task, _rerun
 
-    # Don't start multiple processing tasks
+    # One batch at a time; the one running goes round again when it finishes.
     if _processing_task and not _processing_task.done():
-        logger.debug("Task already running, skipping")
+        logger.debug("Task already running, another pass queued")
+        _rerun = True
         return
 
     try:
@@ -85,13 +89,27 @@ def trigger_processing():
 async def process_batch():
     """Main processing batch - runs asynchronously"""
 
+    global _rerun
     logger.debug("process_batch() called")
 
     # Try to acquire lock (non-blocking)
     if not _processing_lock.acquire(blocking=False):
-        logger.debug("Already running, skipping")
+        logger.debug("Already running, another pass queued")
+        _rerun = True
         return
 
+    try:
+        while True:
+            _rerun = False
+            await _process_once()
+            if not _rerun:
+                break
+            logger.info("Packets arrived during the run; processing again")
+    finally:
+        _processing_lock.release()
+
+
+async def _process_once():
     try:
         # Load config
         config = toml.load("config.toml")
@@ -106,8 +124,6 @@ async def process_batch():
             db.close()
     except Exception as e:
         logger.exception(f"Fatal error in process_batch: {e}")
-    finally:
-        _processing_lock.release()
 
 
 class ProcessingService:
@@ -723,8 +739,11 @@ class ProcessingService:
 
             try:
                 packet_info = parse_packet_filename(packet_file.name)
+                if not packet_info:
+                    logger.warning(f"Not collecting {packet_file.name}: not a packet's name")
+                    continue
 
-                # Skip hub-destined packets (watcher handles those)
+                # The game's own (it is the hub): nothing to route
                 if packet_info["dest_bbs_index"] == hub_index:
                     continue
 

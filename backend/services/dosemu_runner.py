@@ -1,10 +1,20 @@
 # backend/services/dosemu_runner.py
 
 import asyncio
+import os
+import signal
 import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
+
+
+def _kill_session(process) -> None:
+    """Kill everything started under `process`, which leads its own session."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 class DosemuRunner:
@@ -217,17 +227,27 @@ class DosemuRunner:
             str(output_log)
         ]
 
-        # Still capture stdout/stderr in case script fails to start
+        # Still capture stdout/stderr in case script fails to start.
+        #
+        # Its own session, so a timeout can take down script, dosemu and the game
+        # together: cancelling communicate() kills nothing, and a hung dosemu left
+        # running holds the game folder (and inuse.flg) against the next run.
         process = await asyncio.create_subprocess_exec(
             *script_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=self.server_data_dir,
             env=env,
+            start_new_session=True,
         )
 
         # Read output (will be empty if script works, but captures script errors)
-        stdout_data, _ = await process.communicate()
+        try:
+            stdout_data, _ = await process.communicate()
+        except asyncio.CancelledError:
+            _kill_session(process)
+            await process.wait()
+            raise
 
         # Fall back to script's own stderr only when there is no transcript to keep.
         # A non-zero return now means "dosemu failed", not "script failed", and in

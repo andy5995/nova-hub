@@ -160,6 +160,7 @@ async def resolve_alert(
         raise HTTPException(status_code=400, detail="Alert is already resolved")
 
     alert.resolved_at = datetime.now()
+    alert.is_resolved = True
     db.commit()
 
     logger.info(f"Alert {alert_id} resolved by {current_user.username}")
@@ -195,6 +196,8 @@ async def unresolve_alert(
         raise HTTPException(status_code=400, detail="Alert is not resolved")
 
     alert.resolved_at = None
+    alert.is_resolved = False
+    alert.resolution_note = None
     db.commit()
 
     logger.info(f"Alert {alert_id} unresolved by {current_user.username}")
