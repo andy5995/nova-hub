@@ -2871,6 +2871,8 @@ Update a sysop user (admin only)
 - `username`: New username (optional)
 - `password`: New password (optional)
 - `is_admin`: New admin status (optional)
+- `is_active`: False disables the account: it can't sign in, and its
+  session stops working (optional)
 
 **Returns:** Updated user
 

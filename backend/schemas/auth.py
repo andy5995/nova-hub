@@ -39,6 +39,7 @@ class UserResponse(BaseModel):
     id: int
     username: str
     is_admin: bool = False
+    is_active: bool = True  # False: disabled by an admin, can't sign in
     email: Optional[str] = None
     full_name: Optional[str] = None
     has_password: bool = False  # can use the local login
@@ -80,3 +81,4 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     is_admin: Optional[bool] = None
+    is_active: Optional[bool] = None  # False disables the account without deleting it

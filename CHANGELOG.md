@@ -4,6 +4,35 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **A service token is no longer a session.** Both are signed with the same
+  key, and the claim page's optional sign-in didn't check which kind it had,
+  so a BBS whose client ID matched a sysop's username could act as that sysop
+  there. (#87)
+- **X-Forwarded-For/-Host/-Proto are believed only from the reverse proxy**
+  (`[security] trusted_proxies`, default the loopback addresses), and the
+  address used is the one the proxy appended. Before, any client could pick
+  the address the rate limiter, the audit log and claim links saw. Behind
+  Caddy as deployed this wasn't reachable; on a hub serving directly it was.
+  The limiter also forgets addresses that went quiet. (#87)
+- **Sign-in redirects stay on the hub** even when the path hides a tab or
+  newline, which browsers drop to make `//elsewhere`. (#87)
+- A transcript or score file that can't be converted to HTML is shown
+  escaped, not as raw HTML; the converter's failures and hangs (20s) now count
+  as failures. (#87)
+- A join application is refused if a field holds a newline or control
+  character: approval copies them into nodes.dat. Config files the hub writes
+  escape control characters, and a BBS name can't close the PowerShell
+  file's comment or its quotes (including typographic ones). (#87)
+- An unknown BBS or username takes as long to refuse as a wrong secret, and
+  input bcrypt refuses counts as a failed attempt rather than an error. (#87)
+
+### Added
+- **Disable an account** without deleting it (Admin > Users > Edit). A
+  disabled account can't sign in by either route, and its session stops
+  working. Password sign-in now records the last sign-in, as the provider
+  route did. (#87)
+
 ## [0.9.0] - 2026-10-19
 
 ### Added

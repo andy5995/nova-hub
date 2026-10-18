@@ -76,6 +76,11 @@ def validate_password(password: str) -> None:
         raise ValueError("Password must contain at least one lowercase letter.")
     if not any(c.isdigit() for c in password):
         raise ValueError("Password must contain at least one digit.")
+    # bcrypt reads at most 72 bytes and stops at a NUL; newer versions refuse both.
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 bytes.")
+    if "\x00" in password:
+        raise ValueError("Password must not contain a NUL character.")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -121,8 +126,26 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash using bcrypt"""
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    """Verify a password against its hash using bcrypt.
+
+    False, never an exception, for input bcrypt refuses (newer versions raise
+    on more than 72 bytes) or a stored value that isn't a bcrypt hash: either
+    way it is a failed sign-in, and must be counted as one.
+    """
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+# Checked against when there is no account to check, so a miss takes as long
+# as a wrong password and doesn't say which names exist.
+_DUMMY_HASH = bcrypt.hashpw(b"nova-hub timing pad", bcrypt.gensalt()).decode("utf-8")
+
+
+def burn_password_check(plain_password: str) -> None:
+    """Spend a bcrypt check's time on nothing."""
+    verify_password(plain_password, _DUMMY_HASH)
 
 
 def hash_password(password: str) -> str:
@@ -202,10 +225,8 @@ def verify_client_credentials(client_id: str, client_secret: str, db: Session):
 
     client = db.query(Client).filter(Client.client_id == client_id).first()
 
-    if not client:
-        return None
-
-    if not client.is_active:
+    if not client or not client.is_active:
+        burn_password_check(client_secret)
         return None
 
     from backend.services.client_secrets import matches
@@ -290,6 +311,10 @@ async def get_current_user_optional(request: Request, db: Session = Depends(get_
 
     payload = verify_token(token)
     if payload is None:
+        return None
+
+    # A service token is signed with the same key: only a session token counts here.
+    if payload.get("type") != "management":
         return None
 
     username: str = payload.get("sub")

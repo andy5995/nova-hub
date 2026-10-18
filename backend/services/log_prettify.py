@@ -10,6 +10,9 @@ from backend.logging_config import get_logger
 
 logger = get_logger(context="log_prettify")
 
+# A month of transcripts converts in well under a second.
+CONVERT_TIMEOUT = 20
+
 
 async def strip_spans(html_string):
     # Called a line at a time, and a line that is only a DOS path or a URL makes
@@ -58,9 +61,18 @@ async def ansi_to_html(log_ansi):
             "-preview",
             stdin=fp,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.PIPE,
         )
+        try:
+            stdout_data, stderr_data = await asyncio.wait_for(
+                process.communicate(), timeout=CONVERT_TIMEOUT)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise RuntimeError(f"terminal-to-html took over {CONVERT_TIMEOUT}s")
 
-        stdout_data, _ = await process.communicate()
-
+    # Its error text is not HTML; the caller falls back to escaping the input.
+    if process.returncode != 0:
+        raise RuntimeError(f"terminal-to-html exited {process.returncode}: "
+                           f"{stderr_data.decode(errors='replace')[:200]}")
     return stdout_data.decode()
