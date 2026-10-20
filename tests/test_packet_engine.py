@@ -287,8 +287,10 @@ async def test_a_timed_out_dosemu_is_killed_with_everything_it_started(tmp_path)
     runner = DosemuRunner({"server": {"data_dir": str(tmp_path)},
                            "dosemu": {"dosemu_path": "/bin/true", "timeout": 1}})
     pidfile = tmp_path / "child.pid"
-    # A child that outlives its shell, as dosemu.bin does under script.
-    cmd = ["sh", "-c", f"sleep 60 & echo $! > {pidfile}; wait"]
+    # _run_command puts this under script(1), which gives it a session and pty
+    # of its own. Deaf to the pty's hangup, as dosemu may be, it dies only if
+    # it is killed outright, not because script went.
+    cmd = ["sh", "-c", f"trap '' HUP; sleep 60 & echo $! > {pidfile}; wait"]
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(runner._run_command(cmd, tmp_path / "out.log"), timeout=1)
 
@@ -300,6 +302,28 @@ async def test_a_timed_out_dosemu_is_killed_with_everything_it_started(tmp_path)
     else:
         os.kill(pid, 9)
         pytest.fail("the game's process outlived the timeout")
+
+
+@pytest.mark.skipif(shutil.which("script") is None, reason="needs script(1)")
+@pytest.mark.asyncio
+async def test_a_timeout_kills_an_orphan_left_in_dosemus_session(tmp_path):
+    runner = DosemuRunner({"server": {"data_dir": str(tmp_path)},
+                           "dosemu": {"dosemu_path": "/bin/true", "timeout": 1}})
+    pidfile = tmp_path / "orphan.pid"
+    # The subshell starts sleep and exits, so sleep is reparented out of the
+    # tree under script; only its session still ties it to the run.
+    cmd = ["sh", "-c", f"trap '' HUP; (sleep 60 & echo $! > {pidfile}); sleep 60"]
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(runner._run_command(cmd, tmp_path / "out.log"), timeout=1)
+
+    pid = int(pidfile.read_text())
+    for _ in range(50):
+        if not _running(pid):
+            break
+        await asyncio.sleep(0.05)
+    else:
+        os.kill(pid, 9)
+        pytest.fail("an orphan in dosemu's session outlived the timeout")
 
 
 def _running(pid: int) -> bool:

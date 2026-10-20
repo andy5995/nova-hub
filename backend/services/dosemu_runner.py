@@ -9,12 +9,41 @@ from datetime import datetime
 from pathlib import Path
 
 
-def _kill_session(process) -> None:
-    """Kill everything started under `process`, which leads its own session."""
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+def _kill_tree(pid: int) -> None:
+    """SIGKILL pid, every process under it, and every process in their sessions.
+
+    script(1) runs dosemu in a session of its own, on a pty of its own, so
+    neither killing script nor its process group reaches dosemu. All dosemu
+    would get is the pty's hangup, which it need not act on, and it would go on
+    holding the game folder (and inuse.flg) against the next run. The sessions
+    catch a process whose parent has already exited: it is reparented to init,
+    out of the tree, but it is still in dosemu's session.
+    """
+    parent, session = {}, {}
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+            child = int(stat.parent.name)
+            parent[child], session[child] = int(fields[1]), int(fields[3])
+        except (OSError, IndexError, ValueError):
+            continue
+    children = {}
+    for child, ppid in parent.items():
+        children.setdefault(ppid, []).append(child)
+    tree, stack = set(), [pid]
+    while stack:
+        current = stack.pop()
+        tree.add(current)
+        stack.extend(children.get(current, []))
+    # Never our own session: script leads its own, so only a hub started
+    # oddly could share one, and then this would kill the hub.
+    sessions = {session[p] for p in tree if p in session} - {os.getsid(0)}
+    targets = tree | {p for p, sid in session.items() if sid in sessions}
+    for target in targets - {os.getpid()}:
+        try:
+            os.kill(target, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 class DosemuRunner:
@@ -229,9 +258,10 @@ class DosemuRunner:
 
         # Still capture stdout/stderr in case script fails to start.
         #
-        # Its own session, so a timeout can take down script, dosemu and the game
-        # together: cancelling communicate() kills nothing, and a hung dosemu left
-        # running holds the game folder (and inuse.flg) against the next run.
+        # Cancelling communicate() kills nothing, and a hung dosemu left running
+        # holds the game folder (and inuse.flg) against the next run, so a
+        # timeout kills the lot (_kill_tree). script's own session keeps the
+        # hub's out of what that kills.
         process = await asyncio.create_subprocess_exec(
             *script_cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -245,7 +275,7 @@ class DosemuRunner:
         try:
             stdout_data, _ = await process.communicate()
         except asyncio.CancelledError:
-            _kill_session(process)
+            _kill_tree(process.pid)
             await process.wait()
             raise
 
