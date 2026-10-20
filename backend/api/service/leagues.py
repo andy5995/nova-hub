@@ -1,7 +1,6 @@
 """Service API league operations (nodelist download)"""
 
 import hashlib
-from datetime import datetime
 from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
 
@@ -9,11 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Reques
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
 from backend.models.database import Client, League, LeagueMembership, Packet
+from backend.schemas.packets import BINARY
 from backend.services.games import LEAGUE_ID_REGEX, game_for_letter
 from backend.services.league_utils import parse_league_id
 from backend.services.processing_service import find_file_case_insensitive
@@ -58,7 +59,18 @@ def _is_not_modified(request: Request, etag: str, mtime: float) -> bool:
     return False
 
 
-@router.get("/{league_id}/nodelist", summary="Download Nodelist")
+@router.get(
+    "/{league_id}/nodelist", summary="Download Nodelist", response_class=Response,
+    responses={
+        200: {"description": "The nodelist", "content": BINARY},
+        304: {"description": "Unchanged since the If-None-Match or If-Modified-Since given"},
+    },
+    # Read from request.headers by _is_not_modified, so declared by hand.
+    openapi_extra={"parameters": [
+        {"name": "If-None-Match", "in": "header", "required": False, "schema": {"type": "string"}},
+        {"name": "If-Modified-Since", "in": "header", "required": False, "schema": {"type": "string"}},
+    ]},
+)
 async def download_nodelist(
     league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     request: Request = None,
@@ -188,7 +200,7 @@ async def download_nodelist(
     )
 
     if nodelist_packet:
-        nodelist_packet.downloaded_at = datetime.now()
+        nodelist_packet.downloaded_at = utcnow()
         nodelist_packet.is_downloaded = True
         db.commit()
         logger.debug(f"Marked nodelist packet {nodelist_path.name} as downloaded for BBS {dest_bbs_hex}")

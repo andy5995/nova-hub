@@ -47,6 +47,25 @@ All notable changes to Nova Hub will be documented in this file.
   disabled account can't sign in by either route, and its session stops
   working. Password sign-in now records the last sign-in, as the provider
   route did. (#87)
+- **The token endpoint speaks more OAuth2.** The response carries
+  `expires_in` (seconds) and `Cache-Control: no-store`, and a client may send
+  its id and secret as HTTP Basic instead of in the form (RFC 6749 2.3.1),
+  as stock OAuth2 libraries do. Sending both, or neither, is a 400; it was a
+  422 for neither. (#89)
+- The Service API spec says what its binary endpoints carry: an
+  `application/octet-stream` body on upload, bytes from a packet or
+  nodelist download, and the nodelist's 304 and conditional headers. (#89)
+- League ids in Service API paths may use a lowercase game letter (`555b`). (#89)
+
+### Fixed
+- **Every stored time is UTC.** Packet download, processing, alert resolution
+  and the dashboard's stats used the host's local clock while everything else
+  used UTC. On a host outside UTC that shifted run durations, the MIT
+  window's checks and the reset confirmation window. Every hub host so far
+  runs in UTC, so no stored data is affected. (#89)
+- `received_at` and `retrieved_at` in the Service API's packet list end in
+  `Z`, as the spec's `date-time` promises. (#89)
+- A run's duration is never negative and counts past a day. (#89)
 
 ## [0.9.0] - 2026-10-19
 

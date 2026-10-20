@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.models.database import Client, League, LeagueMembership, Packet, ProcessingRun, SequenceAlert
 
 
@@ -26,7 +27,7 @@ class StatsService:
 
     def get_dashboard_stats(self) -> Dict:
         """Get stats for dashboard"""
-        now = datetime.now()
+        now = utcnow()
         day_ago = now - timedelta(days=1)
 
         clients = self.db.query(func.count(Client.id))
@@ -113,7 +114,7 @@ class StatsService:
 
     def get_activity_chart_data(self, hours: int = 24) -> tuple:
         """Get packet activity for chart"""
-        now = datetime.now()
+        now = utcnow()
         start = now - timedelta(hours=hours)
 
         # Group by hour
@@ -183,7 +184,7 @@ class StatsService:
                 "last_seen": "Never",
             }
 
-        cutoff = datetime.now() - timedelta(days=days)
+        cutoff = utcnow() - timedelta(days=days)
 
         # Build filters for each league membership
         sent_filters = [
@@ -260,7 +261,7 @@ class StatsService:
         if not dt:
             return "Never"
 
-        now = datetime.now()
+        now = utcnow()
         diff = now - dt
 
         if diff.days > 0:

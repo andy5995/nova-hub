@@ -1,8 +1,18 @@
 """Packet schemas for Nova Hub APIs"""
 
-from datetime import datetime
-from typing import List, Optional
-from pydantic import BaseModel, ConfigDict
+from datetime import datetime, timezone
+from typing import Annotated, List, Optional
+from pydantic import BaseModel, ConfigDict, PlainSerializer
+
+# The database holds naive UTC. Said so on the wire, as RFC 3339 ("...Z"), which
+# is what the spec's date-time format promises.
+UtcDateTime = Annotated[datetime, PlainSerializer(
+    lambda d: d.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"),
+    return_type=str, when_used="json")]
+
+# The packets' and nodelists' bodies are raw bytes, read from and written to the
+# request directly, so FastAPI cannot see them to document them.
+BINARY = {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}
 
 
 class PacketInfo(BaseModel):
@@ -13,8 +23,8 @@ class PacketInfo(BaseModel):
     source: str
     dest: str
     sequence: int
-    received_at: datetime
-    retrieved_at: Optional[datetime] = None
+    received_at: UtcDateTime
+    retrieved_at: Optional[UtcDateTime] = None
     file_size: int
 
 
