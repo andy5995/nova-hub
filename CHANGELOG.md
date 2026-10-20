@@ -5,6 +5,21 @@ All notable changes to Nova Hub will be documented in this file.
 ## [Unreleased]
 
 ### Security
+- **A member can no longer speak for the coordinator.** League settings and
+  the reset history came from any uploaded packet's Configupdate or Game
+  Start, so a member could rewrite what the hub shows of a league. Those two
+  records are now believed only from the hub's own packets (source = the
+  hub's index), and any other record only when its sender is the board that
+  uploaded it. The hub relays other boards' records, so its own packets are
+  exempt. Refused records are logged and skipped; the packet still routes. (#88)
+- **The BRE parser has size limits.** A record may decompress to 16 KB and a
+  packet to 1 MB; past that the packet is undecodable, as a bad one already
+  was. The largest real record is 2.7 KB. Before, a 60 KB upload could expand
+  to gigabytes in memory, even with a bad CRC. (#88)
+- Damaged numbers and dates in a record (a short Real, a date past year
+  9999, a loss that isn't a fraction) read as unknown or undecodable rather
+  than raising. A reveal of a damaged record gives 422, not 500, and reveals
+  read only records whose CRC checks. (#88)
 - **A service token is no longer a session.** Both are signed with the same
   key, and the claim page's optional sign-in didn't check which kind it had,
   so a BBS whose client ID matched a sysop's username could act as that sysop
