@@ -55,6 +55,7 @@ const newIsAdmin = ref(false)
 const editUsername = ref('')
 const editPassword = ref('')
 const editIsAdmin = ref(false)
+const editIsActive = ref(true)
 
 onMounted(async () => {
   await usersStore.loadUsers()
@@ -73,6 +74,7 @@ function openEditModal(user: User) {
   editUsername.value = user.username
   editPassword.value = ''
   editIsAdmin.value = user.is_admin
+  editIsActive.value = user.is_active !== false
   usersStore.clearError()
   showEditModal.value = true
 }
@@ -99,7 +101,7 @@ async function handleCreate() {
 async function handleEdit() {
   if (!editingUser.value || !editUsername.value) return
 
-  const data: { username?: string; password?: string; is_admin?: boolean } = {}
+  const data: { username?: string; password?: string; is_admin?: boolean; is_active?: boolean } = {}
 
   if (editUsername.value !== editingUser.value.username) {
     data.username = editUsername.value
@@ -111,6 +113,10 @@ async function handleEdit() {
 
   if (editIsAdmin.value !== editingUser.value.is_admin) {
     data.is_admin = editIsAdmin.value
+  }
+
+  if (editIsActive.value !== (editingUser.value.is_active !== false)) {
+    data.is_active = editIsActive.value
   }
 
   // Only update if there are changes
@@ -209,6 +215,7 @@ function canDelete(user: User): boolean {
                   <span class="badge" :class="user.is_admin ? 'badge-warning' : 'badge-secondary'">
                     {{ user.is_admin ? 'Admin' : 'Sysop' }}
                   </span>
+                  <span v-if="user.is_active === false" class="badge badge-danger ml-2">Disabled</span>
                 </td>
                 <td>
                   <span v-if="user.sso_linked" class="badge badge-info">Provider</span>
@@ -361,6 +368,19 @@ function canDelete(user: User): boolean {
                 </label>
                 <small v-if="editingUser?.id === authStore.user?.id" class="text-muted">
                   You cannot change your own admin status
+                </small>
+              </div>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input
+                    type="checkbox"
+                    v-model="editIsActive"
+                    :disabled="editingUser?.id === authStore.user?.id"
+                  />
+                  <span>Account enabled</span>
+                </label>
+                <small class="text-muted">
+                  A disabled account can't sign in, and its session stops working. Nothing is deleted.
                 </small>
               </div>
             </div>

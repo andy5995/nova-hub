@@ -138,6 +138,8 @@ async def update_user(
     - `username`: New username (optional)
     - `password`: New password (optional)
     - `is_admin`: New admin status (optional)
+    - `is_active`: False disables the account: it can't sign in, and its
+      session stops working (optional)
 
     **Returns:** Updated user
 
@@ -186,6 +188,13 @@ async def update_user(
         audit.record(db, "user.role_changed", actor=current_user, target=user,
                      detail="now admin" if request.is_admin else "now sysop",
                      request=http_request)
+
+    if request.is_active is not None and request.is_active != user.is_active:
+        if user.id == current_user.id and not request.is_active:
+            raise HTTPException(status_code=400, detail="Cannot disable your own account")
+        user.is_active = request.is_active
+        audit.record(db, "user.enabled" if request.is_active else "user.disabled",
+                     actor=current_user, target=user, request=http_request)
 
     db.commit()
     db.refresh(user)

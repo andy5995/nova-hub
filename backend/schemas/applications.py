@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from backend.schemas.clients import _validate_bbs_name, _validate_location
 
 
 class JoinableLeague(BaseModel):
@@ -25,6 +27,18 @@ class JoinApplicationRequest(BaseModel):
     os: Optional[Literal["windows", "linux"]] = None
     league_ids: List[int]
     note: Optional[str] = Field(None, max_length=2000)
+
+    # Approving copies these onto the BBS, and from there into nodes.dat,
+    # where a newline would shift every later field of the nodelist.
+    @field_validator("bbs_name")
+    @classmethod
+    def one_line_name(cls, value: str) -> str:
+        return _validate_bbs_name(value)
+
+    @field_validator("sysop_name", "city", "state", "country", "address")
+    @classmethod
+    def one_line_fields(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_location(value)
 
 
 class LeagueRequest(BaseModel):
