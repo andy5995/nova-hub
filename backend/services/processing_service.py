@@ -6,7 +6,6 @@ import shutil
 import threading
 import time
 import toml
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -202,7 +201,7 @@ class ProcessingService:
                     game_type_str, group_packets, run.id, league_id_str
                 )
 
-            run.completed_at = datetime.now()
+            run.completed_at = utcnow()
 
             # A group that failed leaves its packets unprocessed and its files in
             # hub inbound, so the run did not do what it was asked. Reporting that
@@ -235,7 +234,7 @@ class ProcessingService:
 
         except Exception as e:
             logger.error(f"Error: {e}")
-            run.completed_at = datetime.now()
+            run.completed_at = utcnow()
             run.status = "failed"
             run.error_message = str(e)
 
@@ -479,7 +478,7 @@ class ProcessingService:
             hub_index = self.config["hub"]["bbs_index"]
 
             for packet in packets:
-                packet.processed_at = datetime.now()
+                packet.processed_at = utcnow()
                 packet.is_processed = True
 
                 # Archive - move from hub inbound to hub processed
@@ -802,7 +801,7 @@ class ProcessingService:
                     existing.file_size = len(content)
                     existing.checksum = file_hash
                     existing.processing_run_id = run_id
-                    existing.processed_at = datetime.now()
+                    existing.processed_at = utcnow()
                     existing.is_processed = True
                     existing.file_data = None  # the file on disk is the packet now
                     logger.info(f"Updated pending outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
@@ -817,7 +816,7 @@ class ProcessingService:
                         file_size=len(content),
                         checksum=file_hash,
                         processing_run_id=run_id,
-                        processed_at=datetime.now(),
+                        processed_at=utcnow(),
                         is_processed=True,
                     )
                     self.db.add(packet)

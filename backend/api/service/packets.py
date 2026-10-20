@@ -1,12 +1,11 @@
 """Service API packet operations"""
 
 import hashlib
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -16,7 +15,7 @@ from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
 from backend.models.database import Client, League, LeagueMembership, Packet
-from backend.schemas.packets import PacketInfo, PacketListResponse, PacketUploadResponse
+from backend.schemas.packets import BINARY, PacketInfo, PacketListResponse, PacketUploadResponse
 from backend.services.games import LEAGUE_ID_REGEX, game_for_letter, nodelist_game
 from backend.services.league_utils import parse_league_id
 from backend.services.packet_service import parse_packet_filename
@@ -27,7 +26,8 @@ logger = get_logger(context="service_packets")
 router = APIRouter()
 
 
-@router.put("/{filename}", response_model=PacketUploadResponse, summary="Upload Packet")
+@router.put("/{filename}", response_model=PacketUploadResponse, summary="Upload Packet",
+            openapi_extra={"requestBody": {"required": True, "content": BINARY}})
 async def upload_packet(
     league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     filename: str = PathParam(...),
@@ -286,7 +286,8 @@ async def list_packets(
     return PacketListResponse(packets=packet_list)
 
 
-@router.get("/{filename}", summary="Download Packet")
+@router.get("/{filename}", summary="Download Packet", response_class=Response,
+            responses={200: {"description": "The packet", "content": BINARY}})
 async def download_packet(
     league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     filename: str = PathParam(...),
@@ -385,7 +386,7 @@ async def _download_nodelist(
     )
 
     if nodelist_packet:
-        nodelist_packet.downloaded_at = datetime.now()
+        nodelist_packet.downloaded_at = utcnow()
         nodelist_packet.is_downloaded = True
         db.commit()
 
@@ -456,7 +457,7 @@ async def _download_packet(
         raise HTTPException(status_code=404, detail="Packet file not found")
 
     # Mark as downloaded
-    packet.downloaded_at = datetime.now()
+    packet.downloaded_at = utcnow()
     packet.is_downloaded = True
     db.commit()
 

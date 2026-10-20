@@ -6,6 +6,7 @@ export interface User {
   id: number
   username: string
   is_admin: boolean
+  is_active?: boolean // false: disabled by an admin
   email?: string | null
   full_name?: string | null
   has_password?: boolean // can use the local login

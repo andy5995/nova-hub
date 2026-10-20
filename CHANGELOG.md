@@ -4,33 +4,120 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
-- **The dashboard's 24-hour cards always said 0.** Packets and processing
-  runs in the last day are now counted (for a sysop, their own).
-- **A league's "processed" and "runs" counts always said 0.** They counted a
-  flag only nodelists ever set and a run column no run fills in. They now
-  count packets with a processed time, and the runs that moved or made
-  something for the league. Processing sets the flag from now on.
-- The activity chart is one query, not one an hour (168 for the week), and
-  the activity feed no longer looks up clients a packet at a time. It also
-  reads the hub's index from the config rather than assuming `01`.
-- `run.py --config` passes the file on to the app it starts; processing
-  re-reads that file each batch, not whatever `config.toml` is in the
-  working directory.
-- `purge_retention.py` reaches the dosemu transcripts on disk, as the
-  hub's own daily pass does, and reports them.
-- `/health` gives 503 when the database fails, and no longer returns the
-  error text to an unauthenticated caller.
-- Signing out reloads the page, so nothing the last session loaded is still
-  in memory for the next person to sign in. Form errors that FastAPI reports
-  as a list read as sentences in every view.
+### Security
+- **A member can no longer speak for the coordinator.** League settings and
+  the reset history came from any uploaded packet's Configupdate or Game
+  Start, so a member could rewrite what the hub shows of a league. Those two
+  records are now believed only from the hub's own packets (source = the
+  hub's index), and any other record only when its sender is the board that
+  uploaded it. The hub relays other boards' records, so its own packets are
+  exempt. Refused records are logged and skipped; the packet still routes. (#88)
+- **The BRE parser has size limits.** A record may decompress to 16 KB and a
+  packet to 1 MB; past that the packet is undecodable, as a bad one already
+  was. The largest real record is 2.7 KB. Before, a 60 KB upload could expand
+  to gigabytes in memory, even with a bad CRC. (#88)
+- Damaged numbers and dates in a record (a short Real, a date past year
+  9999, a loss that isn't a fraction) read as unknown or undecodable rather
+  than raising. A reveal of a damaged record gives 422, not 500, and reveals
+  read only records whose CRC checks. (#88)
+- **A service token is no longer a session.** Both are signed with the same
+  key, and the claim page's optional sign-in didn't check which kind it had,
+  so a BBS whose client ID matched a sysop's username could act as that sysop
+  there. (#87)
+- **X-Forwarded-For/-Host/-Proto are believed only from the reverse proxy**
+  (`[security] trusted_proxies`, default the loopback addresses), and the
+  address used is the one the proxy appended. Before, any client could pick
+  the address the rate limiter, the audit log and claim links saw. Behind
+  Caddy as deployed this wasn't reachable; on a hub serving directly it was.
+  The limiter also forgets addresses that went quiet. (#87)
+- **Sign-in redirects stay on the hub** even when the path hides a tab or
+  newline, which browsers drop to make `//elsewhere`. (#87)
+- A transcript or score file that can't be converted to HTML is shown
+  escaped, not as raw HTML; the converter's failures and hangs (20s) now count
+  as failures. (#87)
+- A join application is refused if a field holds a newline or control
+  character: approval copies them into nodes.dat. Config files the hub writes
+  escape control characters, and a BBS name can't close the PowerShell
+  file's comment or its quotes (including typographic ones). (#87)
+- An unknown BBS or username takes as long to refuse as a wrong secret, and
+  input bcrypt refuses counts as a failed attempt rather than an error. (#87)
+
+### Added
+- **Disable an account** without deleting it (Admin > Users > Edit). A
+  disabled account can't sign in by either route, and its session stops
+  working. Password sign-in now records the last sign-in, as the provider
+  route did. (#87)
+- **The token endpoint speaks more OAuth2.** The response carries
+  `expires_in` (seconds) and `Cache-Control: no-store`, and a client may send
+  its id and secret as HTTP Basic instead of in the form (RFC 6749 2.3.1),
+  as stock OAuth2 libraries do. Sending both, or neither, is a 400; it was a
+  422 for neither. (#89)
+- The Service API spec says what its binary endpoints carry: an
+  `application/octet-stream` body on upload, bytes from a packet or
+  nodelist download, and the nodelist's 304 and conditional headers. (#89)
+- League ids in Service API paths may use a lowercase game letter (`555b`). (#89)
 
 ### Changed
+- **The database enforces its references.** SQLite ignores foreign keys
+  unless asked on every connection, so every reference and `ON DELETE` in the
+  schema was decoration. The hub's engine now turns them on, runs in WAL mode
+  (client polls no longer wait on a processing run's writes) and waits up to
+  30 s for a lock rather than failing. (#91)
 - `deploy/nova-hub.service.j2` adds `NoNewPrivileges`, `PrivateTmp`,
   `ProtectSystem=full` and `UMask=0077`, and `deploy.sh` makes its database
   backup readable by the hub's user only. The unit file is installed by the
   playbook, not `deploy.sh`, so a running hub keeps its unit until that is
-  re-run or the file is copied by hand.
+  re-run or the file is copied by hand. (#92)
+
+### Fixed
+- **Every stored time is UTC.** Packet download, processing, alert resolution
+  and the dashboard's stats used the host's local clock while everything else
+  used UTC. On a host outside UTC that shifted run durations, the MIT
+  window's checks and the reset confirmation window. Every hub host so far
+  runs in UTC, so no stored data is affected. (#89)
+- `received_at` and `retrieved_at` in the Service API's packet list end in
+  `Z`, as the spec's `date-time` promises. (#89)
+- A run's duration is never negative and counts past a day. (#89)
+- **Deleting a league left rows behind**: its attack and traffic sightings,
+  game settings, resets and run items, all pointing at a league that was
+  gone. With foreign keys on, the delete would have failed outright. It now
+  clears every table that names the league, and a run that also carried
+  another league's packets leaves those packets in place. (#91)
+- League creation and deletion are in the audit log. (#91)
+- A new league's number must be three digits; anything else made a league
+  no packet could be addressed to. (#91)
+- `reset_database.py` stamps the new database at the current migration, so
+  the next `alembic upgrade head` doesn't replay them all. (#91)
+- **The dashboard's 24-hour cards always said 0.** Packets and processing
+  runs in the last day are now counted (for a sysop, their own). (#92)
+- **A league's "processed" and "runs" counts always said 0.** They counted a
+  flag only nodelists ever set and a run column no run fills in. They now
+  count packets with a processed time, and the runs that moved or made
+  something for the league. Processing sets the flag from now on. (#92)
+- The activity chart is one query, not one an hour (168 for the week), and
+  the activity feed no longer looks up clients a packet at a time. It also
+  reads the hub's index from the config rather than assuming `01`. (#92)
+- `run.py --config` passes the file on to the app it starts; processing
+  re-reads that file each batch, not whatever `config.toml` is in the
+  working directory. (#92)
+- `purge_retention.py` reaches the dosemu transcripts on disk, as the
+  hub's own daily pass does, and reports them. (#92)
+- `/health` gives 503 when the database fails, and no longer returns the
+  error text to an unauthenticated caller. (#92)
+- Signing out reloads the page, so nothing the last session loaded is still
+  in memory for the next person to sign in. Form errors that FastAPI reports
+  as a list read as sentences in every view. (#92)
+
+### Upgrading
+- One migration (`e7a2c4d9b153`), indexes only, so no table is rebuilt: the
+  client poll's index, the run lookups, and unique indexes for one league
+  per number and game, one membership per BBS per league, and one reset
+  under way at a time. It also clears two packets' references to processing
+  runs that no longer exist. Rehearsed on a copy of production: under a
+  second, both ways, and `foreign_key_check` is clean afterwards. (#91)
+- WAL keeps `nova-hub.db-wal` and `nova-hub.db-shm` beside the database.
+  Back up with `sqlite3 nova-hub.db ".backup <copy>"`, as `deploy.sh`
+  does; a plain copy of `nova-hub.db` alone can miss recent writes. (#91)
 
 ## [0.9.0] - 2026-10-19
 

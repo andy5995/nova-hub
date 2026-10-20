@@ -116,6 +116,10 @@ async def reveal_details(
     packets = db.query(Packet).filter(Packet.id.in_([s.packet_id for s in sightings])).all()
     for r in attack_trace.stored_records(packets, data_dir):
         if r.type == rtype and bre_packet.event_key(r) == key:
+            try:
+                details = bre_packet.traffic_details(r)
+            except bre_packet.PacketFormatError as exc:
+                raise HTTPException(status_code=422, detail=f"The stored record can't be read: {exc}")
             logger.info(f"Traffic {key} ({r.name}) revealed to {current_user.username}")
-            return TrafficDetails(key=key, kind=r.name, details=bre_packet.traffic_details(r))
+            return TrafficDetails(key=key, kind=r.name, details=details)
     raise HTTPException(status_code=404, detail="No stored packet holds this event")
