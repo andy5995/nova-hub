@@ -308,6 +308,8 @@ class League(Base):
     """Game leagues (BRE or FE)"""
 
     __tablename__ = "leagues"
+    # A league is its number and game: two rows for 555B would split its packets.
+    __table_args__ = (Index("uq_leagues_number_game", "league_id", "game_type", unique=True),)
 
     id = Column(Integer, primary_key=True, index=True)
     league_id = Column(String(10), nullable=False, index=True)  # e.g., "555"
@@ -346,6 +348,9 @@ class LeagueMembership(Base):
     """Tracks which clients are members of which leagues"""
 
     __tablename__ = "league_memberships"
+    # One per BBS per league; re-adding a BBS reactivates its row.
+    __table_args__ = (Index("uq_league_memberships_league_client", "league_id", "client_id",
+                            unique=True),)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
@@ -371,6 +376,11 @@ class Packet(Base):
     """Uploaded game packets"""
 
     __tablename__ = "packets"
+    __table_args__ = (
+        # Every client poll: this league's packets for this board, not yet taken.
+        Index("ix_packets_league_dest_downloaded", "league_id", "dest_bbs_index", "downloaded_at"),
+        Index("ix_packets_processing_run_id", "processing_run_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String(50), nullable=False, index=True)  # e.g., "555B0201.001"
@@ -606,6 +616,10 @@ class GameReset(Base):
     __table_args__ = (
         Index("uq_game_resets_one_draft", "league_id", unique=True,
               sqlite_where=text("status = 'draft'")),
+        # One reset under way on the whole hub, which start() checks and this
+        # makes sure of: two would drive dosemu at once.
+        Index("uq_game_resets_one_applying", "status", unique=True,
+              sqlite_where=text("status = 'applying'")),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -647,7 +661,7 @@ class ProcessingRunFile(Base):
     __tablename__ = "processing_run_files"
 
     id = Column(Integer, primary_key=True, index=True)
-    processing_run_id = Column(Integer, ForeignKey("processing_runs.id"), nullable=False)
+    processing_run_id = Column(Integer, ForeignKey("processing_runs.id"), nullable=False, index=True)
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=True, index=True)
     file_type = Column(String(20), nullable=False, index=True)  # "score", "routes", "bbsinfo"
     filename = Column(String(100), nullable=False)  # e.g., "BBSLAND.ANS", "routes.lst"
