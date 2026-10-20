@@ -1,5 +1,6 @@
 """Management API processing run endpoints"""
 
+import html
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -84,7 +85,7 @@ async def list_runs(
         duration = None
         if run.completed_at:
             delta = run.completed_at - run.started_at
-            duration = f"{delta.seconds}s"
+            duration = f"{max(0, int(delta.total_seconds()))}s"
         leagues = leagues_of.get(run.id, [])
 
         run_list.append(
@@ -136,7 +137,7 @@ async def get_run(
     duration = None
     if run.completed_at:
         delta = run.completed_at - run.started_at
-        duration = f"{delta.seconds}s"
+        duration = f"{max(0, int(delta.total_seconds()))}s"
 
     leagues = _run_leagues(db, [run.id], scope)[run.id]
 
@@ -176,7 +177,9 @@ async def get_run(
                 try:
                     file_data_html = await ansi_to_html(file.file_data)
                 except Exception:
-                    file_data_html = file.file_data
+                    # The page renders this as HTML; the raw text is game output
+                    # carrying names players chose.
+                    file_data_html = html.escape(file.file_data)
 
         file_league_name = None
         if file.league_id:
@@ -208,7 +211,7 @@ async def get_run(
             dosemu_log_html = await ansi_to_html(run.dosemu_log)
             dosemu_log_html = await strip_multiple_blank_lines(dosemu_log_html)
         except Exception:
-            dosemu_log_html = run.dosemu_log
+            dosemu_log_html = html.escape(run.dosemu_log)
 
     return ProcessingRunDetail(
         id=run.id,

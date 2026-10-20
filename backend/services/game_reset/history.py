@@ -130,7 +130,7 @@ def history(db: Session, league: League) -> list:
 
 def backfill(db: Session, data_dir: Path) -> Dict[str, int]:
     """Record the Game Starts in BRE packets already on disk. Idempotent."""
-    from backend.services.attack_trace import NODELIST_PREFIXES, _candidates, _file_index
+    from backend.services.attack_trace import NODELIST_PREFIXES, _candidates, _file_index, from_hub
 
     counts = {"packets": 0, "game_starts": 0, "missing": 0, "failed": 0}
     index = _file_index(Path(data_dir))
@@ -138,8 +138,8 @@ def backfill(db: Session, data_dir: Path) -> Dict[str, int]:
                .filter(League.game_type == "B")
                .order_by(Packet.uploaded_at.asc()).all())
     for packet in packets:
-        if packet.filename.upper().startswith(NODELIST_PREFIXES):
-            continue
+        if packet.filename.upper().startswith(NODELIST_PREFIXES) or not from_hub(packet):
+            continue        # only the coordinator sends a Game Start
         counts["packets"] += 1
         candidates = _candidates(packet, index.get(packet.filename.upper()))
         content = next((c for c in candidates if not packet.checksum

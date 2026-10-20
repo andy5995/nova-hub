@@ -71,6 +71,9 @@ class SecurityConfig(BaseModel):
     max_upload_size_bytes: int = 10 * 1024 * 1024  # 10 MB
     min_password_length: int = 12
     cookie_secure: bool = True
+    # Peers whose X-Forwarded-For / -Host / -Proto the hub believes: the reverse
+    # proxy in front of it. Anyone else could write those headers themselves.
+    trusted_proxies: list[str] = ["127.0.0.1", "::1"]
 
 
 class IdentityConfig(BaseModel):

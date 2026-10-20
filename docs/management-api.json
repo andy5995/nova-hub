@@ -5145,6 +5145,11 @@
             "title": "Id",
             "type": "integer"
           },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
           "is_admin": {
             "default": false,
             "title": "Is Admin",
@@ -5189,6 +5194,17 @@
       "UserUpdate": {
         "description": "User update request",
         "properties": {
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
           "is_admin": {
             "anyOf": [
               {
@@ -8824,7 +8840,7 @@
         ]
       },
       "put": {
-        "description": "Update a sysop user (admin only)\n\n**Path Parameters:**\n- `user_id`: Database ID of the user\n\n**Request Body:**\n- `username`: New username (optional)\n- `password`: New password (optional)\n- `is_admin`: New admin status (optional)\n\n**Returns:** Updated user\n\n**Example:**\n```bash\ncurl -X PUT \"https://hub.example.com/management/api/v1/users/1\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"updateduser\", \"is_admin\": true}' \\\n  -b cookies.txt\n```",
+        "description": "Update a sysop user (admin only)\n\n**Path Parameters:**\n- `user_id`: Database ID of the user\n\n**Request Body:**\n- `username`: New username (optional)\n- `password`: New password (optional)\n- `is_admin`: New admin status (optional)\n- `is_active`: False disables the account: it can't sign in, and its\n  session stops working (optional)\n\n**Returns:** Updated user\n\n**Example:**\n```bash\ncurl -X PUT \"https://hub.example.com/management/api/v1/users/1\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"updateduser\", \"is_admin\": true}' \\\n  -b cookies.txt\n```",
         "operationId": "update_user_api_v1_users__user_id__put",
         "parameters": [
           {

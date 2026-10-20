@@ -45,7 +45,8 @@ _BY_CODE = {g.code: g for g in GAMES}
 # For regex character classes: "BF"
 GAME_LETTERS = "".join(g.letter for g in GAMES)
 # Groups: league number, game letter
-LEAGUE_ID_REGEX = rf"^(\d{{3}})([{GAME_LETTERS}])$"
+# Either case: parse_league_id() upper-cases it.
+LEAGUE_ID_REGEX = rf"^(\d{{3}})([{GAME_LETTERS}{GAME_LETTERS.lower()}])$"
 
 
 def game_for_letter(letter: str) -> Game:

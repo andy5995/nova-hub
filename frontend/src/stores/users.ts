@@ -52,6 +52,7 @@ export const useUsersStore = defineStore('users', () => {
     username?: string
     password?: string
     is_admin?: boolean
+    is_active?: boolean
   }): Promise<boolean> {
     loading.value = true
     error.value = null

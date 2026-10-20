@@ -11,6 +11,7 @@ GET reports the link's state and changes nothing -- a chat app fetching a
 preview of a pasted link must not use it up. POST claims it.
 """
 
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -18,7 +19,12 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.rate_limiter import _get_client_ip, check_rate_limit, record_failed_attempt
+from backend.core.rate_limiter import (
+    _get_client_ip,
+    check_rate_limit,
+    from_trusted_proxy,
+    record_failed_attempt,
+)
 from backend.core.security import get_current_user_optional
 from backend.logging_config import get_logger
 from backend.models.database import ClaimLink, Client, SysopUser
@@ -33,6 +39,9 @@ router = APIRouter()
 TOKEN = Path(..., pattern=r"^[A-Za-z0-9_-]{20,64}$")
 
 
+# A hostname or IPv4 address, or a bracketed IPv6 one, with an optional port.
+_HOST = re.compile(r"(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?")
+
 def utc(dt: Optional[datetime]) -> Optional[datetime]:
     """The database holds naive UTC; say so on the way out."""
     return dt.replace(tzinfo=timezone.utc) if dt else None
@@ -45,8 +54,14 @@ def public_url(request: Request) -> str:
     configured = get_config().get("server", {}).get("public_url")
     if configured:
         return str(configured).rstrip("/")
-    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-    host = request.headers.get("x-forwarded-host", request.url.netloc)
+    proto, host = request.url.scheme, request.url.netloc
+    if from_trusted_proxy(request):
+        proto = request.headers.get("x-forwarded-proto", proto)
+        host = request.headers.get("x-forwarded-host", host)
+    # Links built here go into claim pages and config files: a Host header
+    # carrying anything but a hostname and port is not one to repeat.
+    if proto not in ("http", "https") or not _HOST.fullmatch(host):
+        raise HTTPException(status_code=400, detail="Bad Host header")
     return f"{proto}://{host}"
 
 
