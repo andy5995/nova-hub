@@ -688,7 +688,7 @@ export const usersApi = {
   create: (data: { username: string; password: string; is_admin?: boolean }) =>
     api.post('/users', data),
 
-  update: (id: number, data: { username?: string; password?: string; is_admin?: boolean }) =>
+  update: (id: number, data: { username?: string; password?: string; is_admin?: boolean; is_active?: boolean }) =>
     api.put(`/users/${id}`, data),
 
   delete: (id: number) =>

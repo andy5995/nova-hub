@@ -105,7 +105,10 @@ OAuth2 token endpoint for client authentication
 - `client_id`: Your client ID
 - `client_secret`: Your client secret
 
-**Returns:** Access token valid for 24 hours
+Or send `client_id` and `client_secret` as HTTP Basic credentials
+(RFC 6749 2.3.1) and only `grant_type` in the form. Not both.
+
+**Returns:** An access token, and in `expires_in` how many seconds it lasts
 
 **Example:**
 ```bash
@@ -134,6 +137,10 @@ Validation Error
 
 
 **Content-Type:** `application/json`
+
+#### Security
+
+- **HTTPBasic**
 
 ---
 
@@ -218,16 +225,29 @@ curl -X GET "https://hub.example.com/service/api/v1/leagues/555B/nodelist" \
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BF])$`
+  - Pattern: `^(\d{3})([BFbf])$`
+
+**If-None-Match**
+  - Type: `string`
+  - Location: header
+
+**If-Modified-Since**
+  - Type: `string`
+  - Location: header
 
 #### Responses
 
 #### 200
 
-Successful Response
+The nodelist
 
 
-**Content-Type:** `application/json`
+**Content-Type:** `application/octet-stream`
+
+#### 304
+
+Unchanged since the If-None-Match or If-Modified-Since given
+
 
 #### 422
 
@@ -272,11 +292,17 @@ Upload a game packet to the hub using PUT with raw body
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BF])$`
+  - Pattern: `^(\d{3})([BFbf])$`
 
 **filename**
   - Type: `string`
   - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/octet-stream`
+
+**Type:** `string`
 
 #### Responses
 
@@ -319,7 +345,7 @@ Download a specific packet file
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BF])$`
+  - Pattern: `^(\d{3})([BFbf])$`
 
 **filename**
   - Type: `string`
@@ -329,10 +355,10 @@ Download a specific packet file
 
 #### 200
 
-Successful Response
+The packet
 
 
-**Content-Type:** `application/json`
+**Content-Type:** `application/octet-stream`
 
 #### 422
 
@@ -368,7 +394,7 @@ List packets available for download by this client
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BF])$`
+  - Pattern: `^(\d{3})([BFbf])$`
 
 **unread**
 - Filter to only unread (not downloaded) packets
@@ -398,6 +424,13 @@ Validation Error
 ---
 
 ## Security Schemes
+
+### HTTPBasic
+
+**Type:** http
+
+client_id and client_secret, as RFC 6749 2.3.1
+
 
 ### OAuth2PasswordBearer
 

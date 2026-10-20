@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { clientsApi } from '@/services/api'
+import { clientsApi, apiError } from '@/services/api'
 
 export interface Client {
   id: number
@@ -102,8 +102,7 @@ export const useClientsStore = defineStore('clients', () => {
       const response = await clientsApi.list()
       clients.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load clients'
+      error.value = apiError(err, 'Failed to load clients')
     } finally {
       loading.value = false
     }
@@ -117,8 +116,7 @@ export const useClientsStore = defineStore('clients', () => {
       const response = await clientsApi.get(id)
       currentClient.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load client'
+      error.value = apiError(err, 'Failed to load client')
     } finally {
       loading.value = false
     }
@@ -133,8 +131,7 @@ export const useClientsStore = defineStore('clients', () => {
       await loadClients()
       return response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to create client'
+      error.value = apiError(err, 'Failed to create client')
       return null
     } finally {
       loading.value = false
@@ -159,8 +156,7 @@ export const useClientsStore = defineStore('clients', () => {
       }
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to update client'
+      error.value = apiError(err, 'Failed to update client')
       return false
     } finally {
       loading.value = false
@@ -176,8 +172,7 @@ export const useClientsStore = defineStore('clients', () => {
       await loadClients()
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to delete client'
+      error.value = apiError(err, 'Failed to delete client')
       return false
     } finally {
       loading.value = false
@@ -195,8 +190,7 @@ export const useClientsStore = defineStore('clients', () => {
       const response = await clientsApi.regenerateSecret(id, overlapHours)
       return response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to regenerate secret'
+      error.value = apiError(err, 'Failed to regenerate secret')
       return null
     } finally {
       loading.value = false
@@ -216,8 +210,7 @@ export const useClientsStore = defineStore('clients', () => {
       await loadClient(id)
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || failure
+      error.value = apiError(err, failure)
       return false
     }
   }

@@ -2,14 +2,16 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.services.games import GAME_LETTERS
 
 
 class LeagueCreate(BaseModel):
     """Create a new league"""
-    league_id: str  # 3-digit number, e.g., "555"
+    # What packet filenames can carry: anything else makes a league no packet
+    # can ever be addressed to.
+    league_id: str = Field(pattern=r"^\d{3}$")  # 3-digit number, e.g., "555"
     game_type: str  # one letter from backend.services.games, e.g. "B"
     name: str
     description: Optional[str] = None

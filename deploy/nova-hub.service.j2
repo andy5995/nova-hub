@@ -16,5 +16,15 @@ StandardError=journal
 # Environment
 Environment=PYTHONUNBUFFERED=1
 
+# Sandboxing that needs no list of what the hub writes. Not ProtectSystem=strict:
+# that makes /home read-only too, and every league's game_folder (anywhere the
+# config says) would have to be listed in ReadWritePaths, or its processing
+# fails. Neither dosemu nor script is setuid, so NoNewPrivileges costs nothing.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+# Packets, transcripts, backups and the database are the hub's alone.
+UMask=0077
+
 [Install]
 WantedBy=multi-user.target

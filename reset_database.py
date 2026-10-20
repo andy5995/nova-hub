@@ -79,6 +79,15 @@ def reset_database(preserve_config=False):
     Base.metadata.create_all(bind=engine)
     print("✓ Database tables created")
 
+    # create_all builds what head describes, so say it is at head. Unstamped,
+    # the next `alembic upgrade head` would replay every migration against
+    # tables that already exist. alembic/env.py finds the database the same
+    # way this did, from config.toml.
+    from alembic import command
+    from alembic.config import Config
+    command.stamp(Config(str(Path(__file__).parent / "alembic.ini")), "head")
+    print("✓ Stamped at the current migration")
+
     print("\n" + "=" * 60)
     print("Database reset complete!")
     print("=" * 60)

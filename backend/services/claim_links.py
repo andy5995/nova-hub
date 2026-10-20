@@ -208,11 +208,30 @@ NO_SECRET_NOTE = (
 
 
 def _toml_str(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    """A TOML basic string. Control characters are escaped: TOML refuses them raw."""
+    out = []
+    for ch in value:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+def _comment_text(value: str) -> str:
+    """Text safe inside a config file's comment: one line, and nothing that closes a <# #> block."""
+    return "".join(" " if ord(ch) < 0x20 or ord(ch) == 0x7F else ch for ch in value).replace("#>", "# >")
 
 
 def _psd1_str(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+    # PowerShell also ends a single-quoted string at the typographic quotes.
+    for q in ("'", "\u2018", "\u2019", "\u201a", "\u201b"):
+        value = value.replace(q, q + q)
+    return "'" + value + "'"
 
 
 def render_config_toml(client: Client, secret: str | None, hub_url: str, leagues: list[LeagueEntry]) -> str:
@@ -221,7 +240,7 @@ def render_config_toml(client: Client, secret: str | None, hub_url: str, leagues
     With no secret it is a sample: the secret is a placeholder and says so.
     """
     lines = [
-        f"# Nova Client configuration for {client.bbs_name}, issued by the hub.",
+        f"# Nova Client configuration for {_comment_text(client.bbs_name)}, issued by the hub.",
         "#",
         "# This file holds your client secret. Keep it readable only by the user",
         "# that runs the client (chmod 600 config.toml).",
@@ -285,7 +304,7 @@ def render_config_psd1(client: Client, secret: str | None, hub_url: str, leagues
     """config.psd1 for the PowerShell client on Windows. No secret: a sample, as above."""
     lines = [
         "<#",
-        f"    Nova Client configuration for {client.bbs_name}, issued by the hub.",
+        f"    Nova Client configuration for {_comment_text(client.bbs_name)}, issued by the hub.",
         "",
         "    This file holds your client secret. Keep it where only the account",
         "    that runs the client can read it.",

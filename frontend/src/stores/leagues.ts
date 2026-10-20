@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { leaguesApi } from '@/services/api'
+import { leaguesApi, apiError } from '@/services/api'
 
 export interface League {
   id: number
@@ -88,8 +88,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       const response = await leaguesApi.list()
       leagues.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load leagues'
+      error.value = apiError(err, 'Failed to load leagues')
     } finally {
       loading.value = false
     }
@@ -103,8 +102,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       const response = await leaguesApi.get(id)
       currentLeague.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load league'
+      error.value = apiError(err, 'Failed to load league')
     } finally {
       loading.value = false
     }
@@ -124,8 +122,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       await loadLeagues()
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to create league'
+      error.value = apiError(err, 'Failed to create league')
       return false
     } finally {
       loading.value = false
@@ -150,8 +147,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       }
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to update league'
+      error.value = apiError(err, 'Failed to update league')
       return false
     } finally {
       loading.value = false
@@ -167,8 +163,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       await loadLeagues()
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to delete league'
+      error.value = apiError(err, 'Failed to delete league')
       return false
     } finally {
       loading.value = false
@@ -188,8 +183,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       await loadLeague(leagueId)
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to add member'
+      error.value = apiError(err, 'Failed to add member')
       return false
     } finally {
       loading.value = false
@@ -205,8 +199,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       await loadLeague(leagueId)
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to remove member'
+      error.value = apiError(err, 'Failed to remove member')
       return false
     } finally {
       loading.value = false
@@ -225,8 +218,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
       await loadLeague(leagueId)
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to update member'
+      error.value = apiError(err, 'Failed to update member')
       return false
     } finally {
       loading.value = false

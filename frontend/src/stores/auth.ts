@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { authApi } from '@/services/api'
+import { authApi, apiError } from '@/services/api'
 
 export interface User {
   id: number
   username: string
   is_admin: boolean
+  is_active?: boolean // false: disabled by an admin
   email?: string | null
   full_name?: string | null
   has_password?: boolean // can use the local login
@@ -44,8 +45,7 @@ export const useAuthStore = defineStore('auth', () => {
       initialized.value = true
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Login failed'
+      error.value = apiError(err, 'Login failed')
       return false
     } finally {
       loading.value = false
@@ -87,8 +87,7 @@ export const useAuthStore = defineStore('auth', () => {
       await authApi.changePassword(currentPassword, newPassword, confirmPassword)
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Password change failed'
+      error.value = apiError(err, 'Password change failed')
       return false
     } finally {
       loading.value = false

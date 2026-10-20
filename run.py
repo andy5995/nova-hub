@@ -1,5 +1,6 @@
 # run.py - Complete startup script
 
+import os
 import sys
 from pathlib import Path
 
@@ -106,6 +107,9 @@ def main():
     logger.info(f"Service API Docs: http://{host}:{port}/service/docs")
     logger.info(f"Management API Docs: http://{host}:{port}/management/docs")
     logger.info("")
+
+    # main.py, and the reloader's children, find the config through this.
+    os.environ["NOVA_HUB_CONFIG"] = os.path.abspath(args.config)
 
     uvicorn.run(
         "main:app",

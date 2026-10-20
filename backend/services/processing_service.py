@@ -6,13 +6,13 @@ import shutil
 import threading
 import time
 import toml
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from backend.core.clock import utcnow
+from backend.core.config import default_config_path
 from backend.models.database import League, LeagueMembership, Packet, ProcessingRun, ProcessingRunFile
 from backend.core.database import get_session
 from backend.logging_config import get_logger
@@ -111,8 +111,9 @@ async def process_batch():
 
 async def _process_once():
     try:
-        # Load config
-        config = toml.load("config.toml")
+        # Read afresh each batch, so a league added to the file is processed
+        # without a restart -- but the file the hub was started with.
+        config = toml.load(default_config_path())
 
         db = get_session()
         try:
@@ -216,7 +217,7 @@ class ProcessingService:
                     game_type_str, group_packets, run.id, league_id_str
                 )
 
-            run.completed_at = datetime.now()
+            run.completed_at = utcnow()
 
             # A group that failed leaves its packets unprocessed and its files in
             # hub inbound, so the run did not do what it was asked. Reporting that
@@ -249,7 +250,7 @@ class ProcessingService:
 
         except Exception as e:
             logger.error(f"Error: {e}")
-            run.completed_at = datetime.now()
+            run.completed_at = utcnow()
             run.status = "failed"
             run.error_message = str(e)
 
@@ -493,7 +494,8 @@ class ProcessingService:
             hub_index = self.config["hub"]["bbs_index"]
 
             for packet in packets:
-                packet.processed_at = datetime.now()
+                packet.processed_at = utcnow()
+                packet.is_processed = True
 
                 # Archive - move from hub inbound to hub processed
                 src = find_file_case_insensitive(hub_inbound_dir, packet.filename)
@@ -818,7 +820,8 @@ class ProcessingService:
                     existing.file_size = len(content)
                     existing.checksum = file_hash
                     existing.processing_run_id = run_id
-                    existing.processed_at = datetime.now()
+                    existing.processed_at = utcnow()
+                    existing.is_processed = True
                     existing.file_data = None  # the file on disk is the packet now
                     logger.info(f"Updated pending outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
                 else:
@@ -832,7 +835,8 @@ class ProcessingService:
                         file_size=len(content),
                         checksum=file_hash,
                         processing_run_id=run_id,
-                        processed_at=datetime.now(),
+                        processed_at=utcnow(),
+                        is_processed=True,
                     )
                     self.db.add(packet)
                     logger.info(f"Collected outbound: {normalized_filename}")

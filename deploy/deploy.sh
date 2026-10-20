@@ -12,6 +12,9 @@
 # the frontend has to be rebuilt (dist is not in git) and migrations have to be
 # applied. Those are here. The restart stays a separate, human decision.
 set -e
+# The database backup this makes holds every client's secret hash: the
+# hub's user only, like the database itself.
+umask 077
 LIVE=/home/novahub/nova-hub
 DATA=/home/novahub/nova-data
 STAMP=$(date +%Y%m%d-%H%M%S)
