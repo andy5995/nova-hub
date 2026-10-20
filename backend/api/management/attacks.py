@@ -116,7 +116,10 @@ async def reveal_forces(
     reveal is logged.
     """
     data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
-    f = attack_trace.forces(db, attack_id, data_dir)
+    try:
+        f = attack_trace.forces(db, attack_id, data_dir)
+    except bre_packet.PacketFormatError as exc:
+        raise HTTPException(status_code=422, detail=f"The stored attack can't be read: {exc}")
     if f is None:
         raise HTTPException(status_code=404, detail="No stored packet holds this attack")
     logger.info(f"Attack {attack_id.lower()} forces revealed to {current_user.username}")

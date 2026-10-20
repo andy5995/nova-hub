@@ -4,26 +4,68 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **A member can no longer speak for the coordinator.** League settings and
+  the reset history came from any uploaded packet's Configupdate or Game
+  Start, so a member could rewrite what the hub shows of a league. Those two
+  records are now believed only from the hub's own packets (source = the
+  hub's index), and any other record only when its sender is the board that
+  uploaded it. The hub relays other boards' records, so its own packets are
+  exempt. Refused records are logged and skipped; the packet still routes. (#88)
+- **The BRE parser has size limits.** A record may decompress to 16 KB and a
+  packet to 1 MB; past that the packet is undecodable, as a bad one already
+  was. The largest real record is 2.7 KB. Before, a 60 KB upload could expand
+  to gigabytes in memory, even with a bad CRC. (#88)
+- Damaged numbers and dates in a record (a short Real, a date past year
+  9999, a loss that isn't a fraction) read as unknown or undecodable rather
+  than raising. A reveal of a damaged record gives 422, not 500, and reveals
+  read only records whose CRC checks. (#88)
+- **A service token is no longer a session.** Both are signed with the same
+  key, and the claim page's optional sign-in didn't check which kind it had,
+  so a BBS whose client ID matched a sysop's username could act as that sysop
+  there. (#87)
+- **X-Forwarded-For/-Host/-Proto are believed only from the reverse proxy**
+  (`[security] trusted_proxies`, default the loopback addresses), and the
+  address used is the one the proxy appended. Before, any client could pick
+  the address the rate limiter, the audit log and claim links saw. Behind
+  Caddy as deployed this wasn't reachable; on a hub serving directly it was.
+  The limiter also forgets addresses that went quiet. (#87)
+- **Sign-in redirects stay on the hub** even when the path hides a tab or
+  newline, which browsers drop to make `//elsewhere`. (#87)
+- A transcript or score file that can't be converted to HTML is shown
+  escaped, not as raw HTML; the converter's failures and hangs (20s) now count
+  as failures. (#87)
+- A join application is refused if a field holds a newline or control
+  character: approval copies them into nodes.dat. Config files the hub writes
+  escape control characters, and a BBS name can't close the PowerShell
+  file's comment or its quotes (including typographic ones). (#87)
+- An unknown BBS or username takes as long to refuse as a wrong secret, and
+  input bcrypt refuses counts as a failed attempt rather than an error. (#87)
+
 ### Added
+- **Disable an account** without deleting it (Admin > Users > Edit). A
+  disabled account can't sign in by either route, and its session stops
+  working. Password sign-in now records the last sign-in, as the provider
+  route did. (#87)
 - **The token endpoint speaks more OAuth2.** The response carries
   `expires_in` (seconds) and `Cache-Control: no-store`, and a client may send
   its id and secret as HTTP Basic instead of in the form (RFC 6749 2.3.1),
   as stock OAuth2 libraries do. Sending both, or neither, is a 400; it was a
-  422 for neither.
+  422 for neither. (#89)
 - The Service API spec says what its binary endpoints carry: an
   `application/octet-stream` body on upload, bytes from a packet or
-  nodelist download, and the nodelist's 304 and conditional headers.
-- League ids in Service API paths may use a lowercase game letter (`555b`).
+  nodelist download, and the nodelist's 304 and conditional headers. (#89)
+- League ids in Service API paths may use a lowercase game letter (`555b`). (#89)
 
 ### Fixed
 - **Every stored time is UTC.** Packet download, processing, alert resolution
   and the dashboard's stats used the host's local clock while everything else
   used UTC. On a host outside UTC that shifted run durations, the MIT
   window's checks and the reset confirmation window. Every hub host so far
-  runs in UTC, so no stored data is affected.
+  runs in UTC, so no stored data is affected. (#89)
 - `received_at` and `retrieved_at` in the Service API's packet list end in
-  `Z`, as the spec's `date-time` promises.
-- A run's duration is never negative and counts past a day.
+  `Z`, as the spec's `date-time` promises. (#89)
+- A run's duration is never negative and counts past a day. (#89)
 
 ## [0.9.0] - 2026-10-19
 

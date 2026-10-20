@@ -24,12 +24,33 @@ _lockouts: Dict[str, float] = {}
 _lock = Lock()
 
 
+def from_trusted_proxy(request: Request) -> bool:
+    """Whether the request came through the reverse proxy, whose X-Forwarded-* headers count."""
+    peer = request.client.host if request.client else None
+    return peer is not None and peer in get_config().security.trusted_proxies
+
+
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP, respecting X-Forwarded-For if set by trusted proxy."""
+    """The client's IP: the peer's, or what the trusted proxy says it saw.
+
+    The proxy appends the address it received from, so the last entry is the
+    one it vouches for; anything left of it came from the client. Caddy, as
+    deployed, replaces the header outright for untrusted clients, so there is
+    usually only one.
+    """
+    peer = request.client.host if request.client else "unknown"
     forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    if forwarded_for and from_trusted_proxy(request):
+        return forwarded_for.split(",")[-1].strip() or peer
+    return peer
+
+
+def _prune(now: float, window: float) -> None:
+    """Drop IPs with no recent attempts and expired lockouts, so the tables stay small."""
+    for ip in [ip for ip, times in _attempts.items() if not times or now - times[-1] >= window]:
+        del _attempts[ip]
+    for ip in [ip for ip, until in _lockouts.items() if now >= until]:
+        del _lockouts[ip]
 
 
 def record_failed_attempt(request: Request) -> None:
@@ -45,6 +66,7 @@ def record_failed_attempt(request: Request) -> None:
     lockout_duration = config.rate_limiting.auth_lockout_seconds
 
     with _lock:
+        _prune(now, window)
         # Prune old attempts outside the window
         _attempts[ip] = [t for t in _attempts[ip] if now - t < window]
         _attempts[ip].append(now)

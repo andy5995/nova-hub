@@ -120,12 +120,22 @@ class PacketFormatError(ValueError):
     pass
 
 
-def unrle(payload: bytes) -> bytes:
+# Two bytes of RLE can stand for 255 zeros, so a packet decompresses to far
+# more than it uploads: a 10 MB packet of nothing but runs would be 1.3 GB.
+# Real records are at most 2,659 bytes (every BRE packet on dev, Oct 2026) and
+# real packets at most 12.6 KB decompressed, so these leave room to spare.
+MAX_RECORD_BODY = 16 * 1024
+MAX_PACKET_BODY = 1024 * 1024
+
+
+def unrle(payload: bytes, limit: int = MAX_RECORD_BODY) -> bytes:
     """0xFD n is n zero bytes; 0xFD 0x00 is a literal 0xFD.
 
     A 0xFD as the very last byte is also literal: the encoder writes a trailing
     0xFD bare. Both cases were found in production, where 0xFD falls inside an
     attack ID often enough to matter -- decoding it as an escape shifts the ID.
+
+    PacketFormatError past `limit` bytes, before allocating them.
     """
     out, i = bytearray(), 0
     while i < len(payload):
@@ -137,11 +147,15 @@ def unrle(payload: bytes) -> bytes:
         else:
             out.append(b)
             i += 1
+        if len(out) > limit:
+            raise PacketFormatError(f"a record decompresses past {limit} bytes")
     return bytes(out)
 
 
 def real48(raw: bytes) -> float:
     """Turbo Pascal's 6-byte Real: exponent byte, then 39-bit mantissa and sign."""
+    if len(raw) != 6:
+        raise PacketFormatError(f"a Real is 6 bytes, not {len(raw)}")
     if raw[0] == 0:
         return 0.0
     mantissa = int.from_bytes(raw[1:6], "little")
@@ -150,8 +164,14 @@ def real48(raw: bytes) -> float:
 
 
 def timestamp(raw: bytes) -> Optional[datetime.datetime]:
+    """None for no date, and for one no calendar holds (a damaged record)."""
     days = real48(raw)
-    return _EPOCH + datetime.timedelta(days=days) if days else None
+    if not days:
+        return None
+    try:
+        return _EPOCH + datetime.timedelta(days=days)
+    except (OverflowError, ValueError):
+        return None
 
 
 def record_crc(payload: bytes) -> bytes:
@@ -174,7 +194,7 @@ class Record:
 def parse(packet: bytes) -> List[Record]:
     if len(packet) < HEADER_SIZE:
         raise PacketFormatError(f"{len(packet)} bytes is shorter than the header")
-    records, i = [], HEADER_SIZE
+    records, i, budget = [], HEADER_SIZE, MAX_PACKET_BODY
     while i < len(packet):
         if all(b == TRAILER for b in packet[i:]):
             break
@@ -187,8 +207,9 @@ def parse(packet: bytes) -> List[Record]:
         payload = packet[i + 9:i + 9 + length]
         if len(payload) != length:
             raise PacketFormatError(f"record at offset {i} runs past the end")
-        records.append(Record(rtype, src, dst, record_crc(payload) == crc,
-                              unrle(payload)))
+        data = unrle(payload, min(MAX_RECORD_BODY, budget))
+        budget -= len(data)
+        records.append(Record(rtype, src, dst, record_crc(payload) == crc, data))
         i += RECORD_HEADER_SIZE + length
     return records
 
@@ -274,7 +295,9 @@ def forces(record: Record) -> Forces:
         out.success = tail[_FAILED] == 0
         out.defenders_destroyed = struct.unpack_from("<i", tail, _DESTROYED)[0]
         out.regions_captured = struct.unpack_from("<i", tail, _CAPTURED)[0]
-        out.loss_fraction = real48(tail[_LOSS:_LOSS + 6])
+        loss = real48(tail[_LOSS:_LOSS + 6])
+        # A fraction; anything else is a damaged record, and unknown beats invented.
+        out.loss_fraction = loss if 0.0 <= loss <= 1.0 else None
     return out
 
 
@@ -470,7 +493,7 @@ def traffic(record: Record) -> Optional[Traffic]:
     out = Traffic(t, record.name, record.src, record.dst)
     try:
         _read(out, d, t)
-    except (IndexError, struct.error):
+    except (IndexError, struct.error, OverflowError, ValueError):
         pass                # a short record: who and where is still worth having
     if t == NEWS and out.role is None:
         return None
@@ -555,7 +578,15 @@ def _read(out: Traffic, d: bytes, t: int) -> None:
 
 def traffic_details(record: Record) -> Optional[dict]:
     """Hidden game state, for the admin reveal only. None for a Message: its
-    content is never decoded, and for types not yet mapped."""
+    content is never decoded, and for types not yet mapped. PacketFormatError
+    for a record too short to hold what its type says."""
+    try:
+        return _traffic_details(record)
+    except (IndexError, struct.error, OverflowError, ValueError) as exc:
+        raise PacketFormatError(f"{record.name} is damaged: {exc}") from exc
+
+
+def _traffic_details(record: Record) -> Optional[dict]:
     d, t = record.data, record.type
     if t == TERRORIST_OP:
         return {"operation": OPERATIONS.get(d[17], f"op {d[17]}"), "sent": d[11],
