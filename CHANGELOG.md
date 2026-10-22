@@ -107,6 +107,40 @@ All notable changes to Nova Hub will be documented in this file.
 - Signing out reloads the page, so nothing the last session loaded is still
   in memory for the next person to sign in. Form errors that FastAPI reports
   as a list read as sentences in every view. (#92)
+- **A packet uploaded while processing ran waited for the next upload.**
+  The hub has no poll loop, and a trigger during a run was dropped, so the
+  last packet of a sync could sit in inbound for a day. The run now goes
+  round again when it finishes. (#90)
+- **A dosemu run that timed out kept running.** The timeout stopped waiting
+  but killed nothing, so a hung game held its folder (and `inuse.flg`)
+  against the next run. A timeout now kills script, dosemu and everything
+  they started, including a process that ignores the hangup or has been
+  orphaned. (#90)
+- **An upload retried after a dropped connection made a second packet.**
+  The same name and bytes within a day now answer with the packet the hub
+  already has. (#90)
+- Uploads no longer create a league for any number a client names: an
+  unknown league is a 404, and a disabled one, which is never processed, a
+  403. A bad `Content-Length` is a 400, not a 500, and a body is refused as
+  soon as it passes the size limit rather than after it is all read. (#90)
+- An uploaded packet records which client sent it (`source_client_id`). (#90)
+- A member not yet given a board index gets a 403, or an empty list, not a
+  500. (#90)
+- With sequence alerts enabled, a gap on a route that had wrapped was
+  resolved as "received" the moment it was raised, by the same number from
+  the time before. Resolution now matches the time round too. (#90)
+- Resolving or reopening an alert by hand now updates what the validator
+  reads, so a hand-resolved alert is no longer resolved again over the top. (#90)
+- A file in a game's outbound folder that isn't a packet is passed over
+  with a warning rather than logged as an error. (#90)
+- A reset's restore swaps the folders by rename, so there is never a moment
+  with no game folder, and it refuses links out of the folder. (#90)
+
+### Removed
+- The outbound folder watcher. It ran at every start, but in three months
+  of production it registered nothing: the hub's game writes packets only
+  during processing runs, which collect them themselves. `watchdog` is no
+  longer a dependency. (#90)
 
 ### Upgrading
 - One migration (`e7a2c4d9b153`), indexes only, so no table is rebuilt: the

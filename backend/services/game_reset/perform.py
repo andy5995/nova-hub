@@ -161,14 +161,21 @@ def backup(folder: Path, into: Path, stamp: str) -> Path:
 
 def restore(archive: Path, folder: Path):
     """Put `folder` back exactly as `archive` holds it. The archive is unpacked
-    beside it first, so a bad archive leaves the folder as it is."""
+    beside it first, so a bad archive leaves the folder as it is, and the two
+    are swapped by rename, so at no point is there no game folder at all."""
     staging = folder.with_name(f".{folder.name}.restoring")
+    replaced = folder.with_name(f".{folder.name}.replaced")
     shutil.rmtree(staging, ignore_errors=True)
+    shutil.rmtree(replaced, ignore_errors=True)
     staging.mkdir()
     with tarfile.open(archive, "r:gz") as tar:
-        tar.extractall(staging, filter="tar")
-    shutil.rmtree(folder)
+        # "data": nothing outside staging, no devices. A game folder holds
+        # neither, and the archive is the hub's own, but a restore is no place
+        # to find out otherwise.
+        tar.extractall(staging, filter="data")
+    folder.rename(replaced)
     staging.rename(folder)
+    shutil.rmtree(replaced)
 
 
 def prune(into: Path, keep: int = KEEP_BACKUPS):

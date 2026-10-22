@@ -462,11 +462,12 @@ class SequenceValidator:
         if not unresolved:
             return 0
 
-        # Route key -> the sequence numbers the detector still considers missing.
+        # Route key -> the (epoch, number) pairs the detector still considers
+        # missing, and the ones that arrived.
         still_missing: dict[tuple, set] = {}
+        arrived: dict[tuple, set] = {}
 
-        def gaps_for(alert) -> set:
-            """The route's outstanding gaps, as (epoch, number) pairs."""
+        def _route(alert) -> tuple:
             key = (alert.league_id, alert.source_bbs_index, alert.dest_bbs_index)
             if key not in still_missing:
                 seqs = self._sequences_for(key)
@@ -474,7 +475,23 @@ class SequenceValidator:
                     (g["sequence_epoch"], g["expected_sequence"])
                     for g in self.find_gaps(seqs)
                 }
-            return still_missing[key]
+                arrived[key] = {divmod(a, SEQUENCE_RANGE)
+                                for a in build_timeline(seqs).absolute}
+            return key
+
+        def gaps_for(alert) -> set:
+            """The route's outstanding gaps, as (epoch, number) pairs."""
+            return still_missing[_route(alert)]
+
+        def received(alert) -> bool:
+            """Did the packet this alert is about arrive? In its own time round:
+            once a route has wrapped, every number is in the table from the
+            first one, and matching on the number alone resolved each new
+            alert as it was raised."""
+            got = arrived[_route(alert)]
+            if alert.sequence_epoch is None:
+                return any(number == alert.expected_sequence for _, number in got)
+            return (alert.sequence_epoch, alert.expected_sequence) in got
 
         def outstanding(alert) -> bool:
             """Is this alert still one of the route's gaps?
@@ -493,24 +510,7 @@ class SequenceValidator:
         resolved_count = 0
         stale_count = 0
         for alert in unresolved:
-            exists = self.db.execute(
-                text("""
-                    SELECT 1 FROM packets
-                    WHERE league_id = :league_id
-                      AND source_bbs_index = :source_bbs_index
-                      AND dest_bbs_index = :dest_bbs_index
-                      AND sequence_number = :sequence_number
-                    LIMIT 1
-                """),
-                {
-                    "league_id": alert.league_id,
-                    "source_bbs_index": alert.source_bbs_index,
-                    "dest_bbs_index": alert.dest_bbs_index,
-                    "sequence_number": alert.expected_sequence
-                }
-            ).fetchone()
-
-            if exists:
+            if received(alert):
                 note = "Missing packet received"
             elif not outstanding(alert):
                 note = (

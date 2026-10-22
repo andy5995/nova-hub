@@ -155,8 +155,6 @@ uvicorn==0.32.0
     # via nova-hub
 uvloop==0.22.1 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'
     # via uvicorn
-watchdog==6.0.0
-    # via nova-hub
 watchfiles==1.1.1
     # via uvicorn
 wcwidth==0.2.14
