@@ -159,6 +159,44 @@ def _numbers(packets):
     return [int(name.rsplit(".", 1)[1]) for name, _ in packets]
 
 
+def _play_busy(node, prefix, days, forced, tag):
+    """Play `days` game days, asking for `forced` extra packets on each.
+
+    A second PLANETARY on the same game day emits nothing, so same-day traffic
+    has to be asked for: REQUEST queues recon traffic and OUTBOUND packages it.
+    That is node_rig.force_packet, and it MUST be given the game day. Without
+    it the forced runs execute on the real date, which is behind the date this
+    install has already been advanced to, and BRE answers a date regression by
+    printing nothing and exiting -- no packet, no error, a transcript of pure
+    dosemu banner. The first version of this scenario did exactly that and
+    measured eight game days of "load" that was really eight idle days.
+
+    Returns [(game_day_index, filename)] in emission order, 1-based days.
+    """
+    out = []
+    for n in range(days):
+        day = (_FIRST_GAME_DAY + timedelta(days=n)).strftime("%Y%m%d")
+        log = node_rig.run(LEAGUE, node, "PLANETARY", tag=f"{tag}{n}", date=day)
+        assert _maintenance_fired(log), (
+            f"game day {n + 1} ({day}) did not run maintenance"
+        )
+        today = [name for name, _ in node_rig.take_outbound(LEAGUE, node)
+                 if name.lower().startswith(prefix)]
+        for k in range(forced):
+            node_rig.force_packet(LEAGUE, node, "REQUEST",
+                                  tag=f"{tag}{n}f{k}", date=day)
+            today += [name for name, _ in node_rig.take_outbound(LEAGUE, node)
+                      if name.lower().startswith(prefix)]
+        assert len(today) >= forced, (
+            f"game day {n + 1} ({day}) produced {len(today)} packet(s) having "
+            f"been asked for {forced} on top of maintenance. Forced traffic "
+            f"that silently produces nothing is the date-regression failure "
+            f"described above, so this is not a quiet day."
+        )
+        out.extend((n + 1, name) for name in today)
+    return out
+
+
 async def test_daily_maintenance_fires_once_per_game_day(pristine):
     """The control that makes every other date-based result meaningful.
 
@@ -400,6 +438,48 @@ async def test_a_route_below_the_minimum_sample_is_left_noisy(pristine, hub):
         f"first week no longer alerts either -- say so deliberately rather than "
         f"deleting this test."
     )
+
+
+async def test_the_law_holds_when_a_node_emits_several_times_a_day(pristine):
+    """The same law, in the regime production actually runs in.
+
+    test_a_game_day_consumes_a_sequence_number_whether_it_emits_or_not measures
+    an idle league, where at most one packet goes out a day. That cannot tell
+    the law's two terms apart: with one packet per emitting day, "one number per
+    rollover plus one per packet" and a dozen other rules all fit. The other
+    sample this project had -- grind.sh forcing 1,100 packets inside a single
+    game day -- cannot separate them either, from the other side.
+
+    A node that plays several days AND emits several times a day can, and it is
+    the shape every production node has. Stated per packet:
+
+        the k-th packet's number == (game days elapsed, incl. its own) + k
+
+    Measured here on four days at three packets a day, and off-rig against the
+    29-number and 37-number samples in tests/test_sequence_validator.py
+    (TestWhatABusyNodeLooksLike), which were recorded at 3 and 10 packets a day
+    over 12 and 4 game days. Exact in all three, no exceptions.
+
+    Those unit tests are where the consequence for the gap detector lives: at
+    about nine packets a day the route crosses DENSITY_THRESHOLD, stops being
+    exempted, and the daily rollover burn starts reading as one lost packet per
+    day. This test is the part only a real game can answer -- that the law is
+    the game's, and still holds when the node is busy.
+    """
+    pristine("900B")
+
+    seen = _play_busy(NODE02, ROUTE_02, days=4, forced=2, tag="bz")
+
+    assert len(seen) >= 8, (
+        f"four days at two forced packets each should produce at least eight; "
+        f"got {len(seen)}: {seen}"
+    )
+    for k, (day, name) in enumerate(seen, start=1):
+        number = int(name.rsplit(".", 1)[1])
+        assert number == day + k, (
+            f"packet {k} ({name}) went out on game day {day}, so the law "
+            f"predicts {day + k} and the game issued {number}. Full run: {seen}"
+        )
 
 
 async def test_an_idle_league_emits_sparsely_but_never_stops(pristine):

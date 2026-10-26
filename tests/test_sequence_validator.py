@@ -211,3 +211,112 @@ class TestRouteDensity:
 
         gaps = v.find_gaps(lossy)
         assert [(g["sequence_epoch"], g["expected_sequence"]) for g in gaps] == [(4, 512)]
+
+class TestWhatABusyNodeLooksLike:
+    """The two load regimes, measured on the rig on 2026-10-27.
+
+    Everything above is a route shape reasoned about or taken from production
+    aggregates. These are the real numbers BRE emitted on 900B route 02->01,
+    driven at a chosen packets-per-day rate, with every packet delivered and
+    nothing lost. They matter because they are the only samples that separate
+    the two terms of the emission law:
+
+        the k-th packet's number == (game days elapsed, incl. its own) + k
+
+    -- one number burned per game-day rollover, one per packet. An idle league
+    hides the first term (one packet per emitting day) and grind.sh hid the
+    second (1,100 packets inside one game day). A node that plays several days
+    AND emits several times a day shows both, and that is production's shape.
+
+    Density here is about (f + 1) / (f + 2) for f forced packets a day, so the
+    DENSITY_THRESHOLD crossing sits at roughly nine packets a day. That single
+    number decides whether a route is exempted or judged, and the two tests
+    below sit either side of it.
+    """
+
+    def _validator(self):
+        return SequenceValidator(db=None)
+
+    # 12 game days, two packets forced per day on top of maintenance. The rate
+    # is not quite steady -- the game emits a third packet of its own accord on
+    # some days and not others -- so the per-day counts are carried with the
+    # numbers rather than assumed. Both lists are verbatim from the rig.
+    MODERATE = [2, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 17, 19, 20, 21,
+                23, 24, 26, 27, 29, 30, 32, 33, 35, 36, 37, 39, 40, 41]
+    MODERATE_PER_DAY = [3, 2, 2, 2, 3, 3, 2, 2, 2, 2, 3, 3]
+
+    # 4 game days, nine forced per day.
+    HEAVY = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19,
+             20, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 35, 36,
+             37, 38, 39, 40, 41]
+    HEAVY_PER_DAY = [10, 9, 9, 9]
+
+    def test_the_emission_law_holds_in_both_samples(self):
+        """What the rig asserts about the game, restated here as arithmetic.
+
+        Each sample carries the number of packets the rig saw on each game
+        day, so the day every packet fell on is known and the law has to
+        reproduce every number from it. If a
+        future BRE build changes how numbers are allocated, the rig scenario
+        catches it first -- but this says plainly what the samples below mean,
+        so nobody has to re-derive it from a list of integers.
+        """
+        samples = (
+            ("moderate", self.MODERATE, self.MODERATE_PER_DAY),
+            ("heavy", self.HEAVY, self.HEAVY_PER_DAY),
+        )
+        for label, numbers, per_day in samples:
+            assert sum(per_day) == len(numbers), (
+                f"the {label} sample's per-day counts do not add up to its "
+                f"numbers; one of the two was edited without the other"
+            )
+            days = [d for d, count in enumerate(per_day, start=1)
+                    for _ in range(count)]
+            for k, (number, day) in enumerate(zip(numbers, days), start=1):
+                assert number == day + k, (
+                    f"{label}: packet {k} fell on game day {day}, so the law "
+                    f"predicts {day + k} and the rig recorded {number}"
+                )
+
+    def test_a_moderately_busy_node_is_exempted(self):
+        """Three packets a day: density 0.72, below the threshold, so quiet.
+
+        The stride gate does nothing for this route -- the deltas are 17 ones
+        and 11 twos, a 0.607 share that scrapes past STRIDE_DOMINANCE and
+        learns a stride of 1, which is no protection at all. The density gate is
+        the only thing keeping it quiet, and that is worth knowing before anyone
+        tunes either constant.
+        """
+        v = self._validator()
+        assert v.numbers_densely(self.MODERATE) is False
+        assert v.route_stride(self.MODERATE) == 1
+        assert v.find_gaps(self.MODERATE) == []
+
+    def test_a_very_busy_node_alerts_once_per_game_day(self):
+        """Ten packets a day: density 0.92, above the threshold, so judged.
+
+        And with stride 1, the rollover burn is read as a lost packet. One per
+        game-day boundary, every day, on a route that lost nothing -- which is
+        exactly production's reported symptom, reproduced here for the first
+        time. Four game days, three boundaries between them, three alerts.
+
+        This is asserted rather than fixed because the fix is a product
+        decision that has not been taken: suppressing one burned number per
+        active day would also swallow a genuine single loss on a busy route,
+        which is the one case this detector exists for. Whoever takes that
+        decision should have to change this test and say so.
+
+        Note which routes this reaches. Production's BRE leagues measure density
+        1.00 and 0.98, so they are all on this side of the gate; Falcon's Eye at
+        0.31 to 0.66 is on the other. The gate separates the two games, not the
+        busy nodes from the quiet ones.
+        """
+        v = self._validator()
+        assert v.numbers_densely(self.HEAVY) is True
+        assert v.route_stride(self.HEAVY) == 1
+
+        gaps = v.find_gaps(self.HEAVY)
+        assert [g["expected_sequence"] for g in gaps] == [12, 22, 32], (
+            "the only numbers missing are the three game-day rollovers"
+        )
+        assert all(g["gap_size"] == 1 for g in gaps)

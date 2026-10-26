@@ -114,7 +114,7 @@ def read(league: League, node: Node, sub: str, filename: str) -> bytes:
 
 
 def force_packet(league: League, node: Node, kind: str = "REQUEST",
-                 tag: str = "force") -> Path:
+                 tag: str = "force", date: str = None) -> Path:
     """Make this node emit another packet today, without waiting for tomorrow.
 
     A second PLANETARY on the same game day emits nothing -- daily maintenance
@@ -130,11 +130,24 @@ def force_packet(league: League, node: Node, kind: str = "REQUEST",
 
     Clear the outbound folder first if you want the new packet on its own: a
     pending packet for the same destination is added to rather than replaced.
+
+    PASS `date` WHENEVER THE INSTALL HAS BEEN ADVANCED BY A DATED RUN -- it must
+    be the same game day. Going back in time is not a soft failure: the game
+    prints nothing at all and exits, so this returns a transcript that is pure
+    dosemu banner and no packet appears, with nothing anywhere saying why.
+    Measured on 900B node 02 on 2026-10-26, after a PLANETARY dated 20261027:
+
+        undated REQUEST+OUTBOUND  ->  no packet, 2127-byte transcript
+        dated   REQUEST+OUTBOUND  ->  900b0201.003, 5678-byte transcript
+
+    A scenario that plays several game days and also wants same-day traffic is
+    the only shape that hits this, which is why it went unnoticed: no test mixed
+    the two until the sequence-number law needed measuring under load.
     """
     kind = kind.upper()
     assert kind in ("REQUEST", "RECON"), f"unknown traffic generator {kind!r}"
-    run(league, node, kind, tag=f"{tag}_{kind.lower()}")
-    return run(league, node, "OUTBOUND", tag=f"{tag}_outbound")
+    run(league, node, kind, tag=f"{tag}_{kind.lower()}", date=date)
+    return run(league, node, "OUTBOUND", tag=f"{tag}_outbound", date=date)
 
 
 def take_outbound(league: League, node: Node):
