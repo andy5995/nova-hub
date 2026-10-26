@@ -1,11 +1,11 @@
 # backend/services/packet_service.py
 
 import hashlib
-from datetime import datetime
 from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.models.database import Client, League, LeagueMembership, Packet
 from backend.services.games import GAMES, game_for_letter
 
@@ -122,7 +122,7 @@ class PacketService:
             dest_client_id=dest_client.id if dest_client else None,
             file_size=len(file_data),
             checksum=checksum,
-            uploaded_at=datetime.utcnow(),
+            uploaded_at=utcnow(),
             is_processed=False,
             is_downloaded=False,
             has_error=False,
@@ -149,7 +149,7 @@ class PacketService:
     def mark_packet_downloaded(self, packet: Packet):
         """Mark packet as downloaded"""
         packet.is_downloaded = True
-        packet.downloaded_at = datetime.utcnow()
+        packet.downloaded_at = utcnow()
         self.db.commit()
 
     def get_packet_by_filename(self, filename: str) -> Optional[Packet]:

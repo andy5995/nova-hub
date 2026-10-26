@@ -79,6 +79,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/leagues/:id/reset',
+      name: 'league-reset',
+      component: () => import('@/views/GameResetView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/processing',
       name: 'processing',
       component: () => import('@/views/ProcessingView.vue'),

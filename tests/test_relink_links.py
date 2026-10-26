@@ -7,7 +7,7 @@ replacing a lost one. It does nothing until that sign-in completes, cannot be
 used twice, and cannot steal an identity another account holds.
 """
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import app, management_app
 from backend.core import rate_limiter
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.security import get_password_hash
 from backend.models.database import AuditEvent, Base, RelinkLink, SysopUser
@@ -166,7 +167,7 @@ def test_a_newer_link_or_time_kills_an_older_one(hub):
     assert sign_in(client, first) == "/login?sso_error=relink_used"
 
     link = db.query(RelinkLink).filter(RelinkLink.superseded_at.is_(None)).one()
-    link.expires_at = datetime.utcnow() - timedelta(seconds=1)
+    link.expires_at = utcnow() - timedelta(seconds=1)
     db.commit()
     assert client.get(f"{API}/relink/{second}").json()["state"] == "expired"
     assert sign_in(client, second) == "/login?sso_error=relink_used"

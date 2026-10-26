@@ -32,6 +32,13 @@ import re
 from pathlib import Path
 
 ANSI = re.compile(rb"\x1b\[[0-9;?]*[a-zA-Z]|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b\][^\x07]*\x07")
+# A cursor move means the next text is painted somewhere else on the screen, so
+# it must not join what came before. Dropping it did: `1-> 4` then a jump to
+# repaint `240` in another record read as `1-> 4240`, and `1-> 3` then `5` would
+# have read as a plausible node 35. A move ends the line; cursor-forward, which
+# games use as spacing within a line, becomes a space.
+CURSOR_MOVE = re.compile(rb"\x1b\[[0-9;]*[HfABDGdu]")
+CURSOR_FORWARD = re.compile(rb"\x1b\[[0-9]*C")
 
 # `type` deliberately excludes ':' -- see the note on run-together records above.
 ITEM = re.compile(
@@ -53,7 +60,8 @@ MAX_TYPE_LENGTH = 40
 def clean(raw: bytes) -> str:
     """Transcript encoding varies with dosemu's charset settings: some runs emit
     UTF-8 (■ as e2 96 a0), others raw cp437 (■ as byte fe). Try UTF-8 first."""
-    stripped = ANSI.sub(b"", raw)
+    stripped = CURSOR_FORWARD.sub(b" ", CURSOR_MOVE.sub(b"\n", raw))
+    stripped = ANSI.sub(b"", stripped)
     try:
         txt = stripped.decode("utf-8")
     except UnicodeDecodeError:

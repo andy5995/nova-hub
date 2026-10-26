@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
-from sqlalchemy import text
+from sqlalchemy import exists, or_, text
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
@@ -170,14 +170,24 @@ async def get_league(
     # Get statistics
     stats = LeagueStats(
         total_packets=db.query(Packet).filter(Packet.league_id == league_id).count(),
+        # processed_at, not is_processed: only nodelists ever set the flag, so
+        # this said 0 for every league with years of traffic.
         processed_packets=db.query(Packet)
         .filter(
             Packet.league_id == league_id,
-            Packet.is_processed == True,
+            Packet.processed_at.isnot(None),
         )
         .count(),
+        # A run takes every league at once and never sets its league_id; it is
+        # this league's by what it moved or made (as Scope.run_clause).
         processing_runs=db.query(ProcessingRun)
-        .filter(ProcessingRun.league_id == league_id)
+        .filter(or_(
+            ProcessingRun.league_id == league_id,
+            exists().where(Packet.processing_run_id == ProcessingRun.id,
+                           Packet.league_id == league_id),
+            exists().where(ProcessingRunFile.processing_run_id == ProcessingRun.id,
+                           ProcessingRunFile.league_id == league_id),
+        ))
         .count(),
     )
 
@@ -203,6 +213,7 @@ async def get_league(
 @router.post("", response_model=LeagueResponse, summary="Create League")
 async def create_league(
     request: LeagueCreate,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -259,6 +270,9 @@ async def create_league(
         is_active=request.is_active if request.is_active is not None else True,
     )
     db.add(league)
+    db.flush()
+    audit.record(db, "league.created", actor=current_user, target=league,
+                 detail=league.name, request=http_request)
     db.commit()
     db.refresh(league)
 
@@ -372,6 +386,7 @@ async def update_league(
 async def delete_league(
     league_id: int,
     request: LeagueDeleteRequest,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -418,19 +433,33 @@ async def delete_league(
     )
     packet_filenames = [row[0] for row in result]
 
-    # Delete in FK dependency order using raw SQL to bypass SQLAlchemy relationship machinery
-    db.execute(text("DELETE FROM sequence_alerts WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("""
-        DELETE FROM processing_run_files
-        WHERE processing_run_id IN (
-            SELECT id FROM processing_runs WHERE league_id = :lid
-        )
-    """), {"lid": league_id})
-    db.execute(text("DELETE FROM processing_run_files WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM packets WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM processing_runs WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM league_memberships WHERE league_id = :lid"), {"lid": league_id})
-    db.execute(text("DELETE FROM leagues WHERE id = :lid"), {"lid": league_id})
+    # Delete in FK dependency order using raw SQL to bypass SQLAlchemy
+    # relationship machinery. Every table that names the league, or one of its
+    # packets or runs, goes first: with foreign keys enforced, anything left
+    # pointing at them fails the delete, and before they were it was orphaned.
+    # Recorded first, while the league is there to describe. The event keeps
+    # its id and name; it does not reference the row.
+    audit.record(db, "league.deleted", actor=current_user, target=league,
+                 detail=f"with {len(packet_filenames)} packets", request=http_request)
+    lid = {"lid": league_id}
+    packets = "SELECT id FROM packets WHERE league_id = :lid"
+    runs = "SELECT id FROM processing_runs WHERE league_id = :lid"
+    for statement in (
+        f"DELETE FROM attack_sightings WHERE league_id = :lid OR packet_id IN ({packets})",
+        f"DELETE FROM traffic_sightings WHERE league_id = :lid OR packet_id IN ({packets})",
+        f"DELETE FROM league_game_settings WHERE league_id = :lid OR packet_id IN ({packets})",
+        "DELETE FROM game_resets WHERE league_id = :lid",
+        "DELETE FROM sequence_alerts WHERE league_id = :lid",
+        f"DELETE FROM processing_run_items WHERE league_id = :lid OR processing_run_id IN ({runs})",
+        f"DELETE FROM processing_run_files WHERE league_id = :lid OR processing_run_id IN ({runs})",
+        # A run can carry other leagues' packets; they keep their rows.
+        f"UPDATE packets SET processing_run_id = NULL WHERE processing_run_id IN ({runs})",
+        "DELETE FROM packets WHERE league_id = :lid",
+        "DELETE FROM processing_runs WHERE league_id = :lid",
+        "DELETE FROM league_memberships WHERE league_id = :lid",
+        "DELETE FROM leagues WHERE id = :lid",
+    ):
+        db.execute(text(statement), lid)
     db.commit()
 
     # Clean up packet files from disk
@@ -438,6 +467,8 @@ async def delete_league(
 
     data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
     for filename in packet_filenames:
+        if Path(filename).name != filename:
+            continue        # never a path: every name passed parse_packet_filename
         for subdir in ("inbound", "outbound", "processed"):
             filepath = data_dir / "packets" / subdir / filename
             if filepath.exists():
@@ -673,13 +704,17 @@ async def generate_nodelist(
     """
     Generate a BRNODES/FENODES nodelist file from the current league membership (admin only).
 
-    The generated file is written to the nodelists directory and made available
-    for download by `nova_client` via the service API.
+    The file is written to the nodelists directory, where the console and the
+    service API's bootstrap download serve it, and into the hub's own game as
+    its nodes file (only if that changes it). The game sends it to every member
+    on its next run, as it does when the file is edited by hand.
 
     **Path Parameters:**
     - `league_id`: Database ID of the league
 
-    **Returns:** `{"filename": ..., "members": <count>}`
+    **Returns:** `{"filename": ..., "members": <count>, "warnings": [...]}`; a
+    warning means the hub's game was not given the nodelist (no `game_folder`,
+    say), so the members will not receive it.
     """
     from backend.core.config import get_config
     from backend.services.nodelist_generator import NodelistGenerator
@@ -698,7 +733,7 @@ async def generate_nodelist(
 
     config = get_config()
     data_dir = config.get("server", {}).get("data_dir", "./data")
-    generator = NodelistGenerator(db, data_dir, config.get("hub", {}))
+    generator = NodelistGenerator(db, data_dir, config.get("hub", {}), config.get("dosemu", {}))
     dest = generator.generate(league_id)
 
     if dest is None:
@@ -728,7 +763,7 @@ async def generate_nodelist(
 
     logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}")
 
-    return {"filename": dest.name, "members": member_count}
+    return {"filename": dest.name, "members": member_count, "warnings": generator.problems}
 
 
 @router.delete("/{league_id}/members/{member_id}", summary="Remove Member")

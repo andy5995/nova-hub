@@ -1,5 +1,5 @@
 import sys
-from datetime import datetime
+
 from pathlib import Path
 
 import pytest
@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import app, service_app, management_app
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.models.database import Base, Client, League, LeagueMembership, Packet
 from backend.core.security import create_service_token
@@ -138,7 +139,7 @@ def test_download_direct_routed_packet(api_client, tmp_path):
             file_size=len(content),
             checksum="hash",
             is_processed=True,
-            uploaded_at=datetime.utcnow(),
+            uploaded_at=utcnow(),
         )
         db.add(packet)
         db.commit()
@@ -198,7 +199,7 @@ def test_download_unauthorized_packet(api_client, tmp_path):
             file_size=len(content),
             checksum="hash",
             is_processed=True,
-            uploaded_at=datetime.utcnow(),
+            uploaded_at=utcnow(),
         )
         db.add(packet)
         db.commit()

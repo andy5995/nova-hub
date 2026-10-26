@@ -10,6 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import require_admin
@@ -54,7 +55,7 @@ async def list_traffic(
     funding News to its kill, or a single event (a message, a Spy Guy).
     """
     hub_index = get_config().get("hub", {}).get("bbs_index", "01")
-    since = datetime.utcnow() - timedelta(days=days)
+    since = utcnow() - timedelta(days=days)
     found = traffic_trace.journeys(traffic_trace.events(
         db, hub_index, league_id=league_id, since=since - LOOKBACK, planet=planet))
     found = [j for j in found
@@ -115,6 +116,10 @@ async def reveal_details(
     packets = db.query(Packet).filter(Packet.id.in_([s.packet_id for s in sightings])).all()
     for r in attack_trace.stored_records(packets, data_dir):
         if r.type == rtype and bre_packet.event_key(r) == key:
+            try:
+                details = bre_packet.traffic_details(r)
+            except bre_packet.PacketFormatError as exc:
+                raise HTTPException(status_code=422, detail=f"The stored record can't be read: {exc}")
             logger.info(f"Traffic {key} ({r.name}) revealed to {current_user.username}")
-            return TrafficDetails(key=key, kind=r.name, details=bre_packet.traffic_details(r))
+            return TrafficDetails(key=key, kind=r.name, details=details)
     raise HTTPException(status_code=404, detail="No stored packet holds this event")

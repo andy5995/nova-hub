@@ -12,11 +12,12 @@ gaps reaching back to January. All of them would be raised at once.
 
 The gaps are still found and still counted. They just stop ringing a bell.
 """
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 
+from backend.core.clock import utcnow
 from backend.services.sequence_validator import (
     DEFAULT_ALERT_MAX_AGE_DAYS,
     SequenceValidator,
@@ -64,7 +65,7 @@ WITH_A_HOLE = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 
 def test_a_gap_noticed_today_raises_an_alert():
     """The case the detector exists for, and the control for everything below."""
-    db = RecordingDB(arrivals_ending(datetime.utcnow(), WITH_A_HOLE))
+    db = RecordingDB(arrivals_ending(utcnow(), WITH_A_HOLE))
 
     alerts = SequenceValidator(db, max_age_days=14).check_sequences()
 
@@ -74,7 +75,7 @@ def test_a_gap_noticed_today_raises_an_alert():
 
 def test_a_gap_from_months_ago_does_not():
     """Production's back catalogue, which is what would otherwise flood in."""
-    long_ago = datetime.utcnow() - timedelta(days=120)
+    long_ago = utcnow() - timedelta(days=120)
     db = RecordingDB(arrivals_ending(long_ago, WITH_A_HOLE))
 
     assert SequenceValidator(db, max_age_days=14).check_sequences() == []
@@ -90,8 +91,8 @@ def test_the_boundary_is_the_age_of_the_arrival_that_revealed_the_gap():
     would absorb it silently.
     """
     cutoff_days = 30
-    inside = datetime.utcnow() - timedelta(days=cutoff_days, hours=-7)
-    outside = datetime.utcnow() - timedelta(days=cutoff_days, hours=7)
+    inside = utcnow() - timedelta(days=cutoff_days, hours=-7)
+    outside = utcnow() - timedelta(days=cutoff_days, hours=7)
 
     assert SequenceValidator(
         RecordingDB(arrivals_ending(inside, WITH_A_HOLE)), max_age_days=cutoff_days
@@ -107,7 +108,7 @@ def test_no_cutoff_means_alert_on_everything(disabled):
 
     Someone auditing history deliberately should be able to see all of it.
     """
-    long_ago = datetime.utcnow() - timedelta(days=365)
+    long_ago = utcnow() - timedelta(days=365)
     db = RecordingDB(arrivals_ending(long_ago, WITH_A_HOLE))
 
     alerts = SequenceValidator(db, max_age_days=disabled).check_sequences()
@@ -127,7 +128,7 @@ def test_ageing_out_does_not_hide_a_recent_gap_on_the_same_route():
     numbers.remove(395)     # the recent one
 
     # A packet every hour, so 395 lands near now and 005 lands weeks back.
-    now = datetime.utcnow()
+    now = utcnow()
     arrivals = [
         (n, now - timedelta(hours=len(numbers) - 1 - i))
         for i, n in enumerate(numbers)
@@ -160,7 +161,7 @@ class TestAlertingCanBeSwitchedOff:
     """
 
     def test_a_real_looking_gap_raises_nothing_when_alerting_is_off(self):
-        db = RecordingDB(arrivals_ending(datetime.utcnow(), WITH_A_HOLE))
+        db = RecordingDB(arrivals_ending(utcnow(), WITH_A_HOLE))
 
         alerts = SequenceValidator(db, max_age_days=14, alerts_enabled=False).check_sequences()
 
@@ -181,7 +182,7 @@ class TestAlertingCanBeSwitchedOff:
 
     def test_turning_it_on_restores_the_alert(self):
         """The control: same data, same everything, one flag different."""
-        db = RecordingDB(arrivals_ending(datetime.utcnow(), WITH_A_HOLE))
+        db = RecordingDB(arrivals_ending(utcnow(), WITH_A_HOLE))
 
         alerts = SequenceValidator(db, max_age_days=14, alerts_enabled=True).check_sequences()
 

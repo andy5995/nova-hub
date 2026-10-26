@@ -3,43 +3,32 @@
 
 `node.run()` covers everything the game will do unattended. It explicitly refuses
 FULL, because FULL is the player path and headless it blocks forever on "Do you
-want ANSI Graphics? (Y/n)". This module is the answer to that refusal: it sits on
-`dosdrive.DosSession` and answers the prompts.
+want ANSI Graphics? (Y/n)". This module is the answer to that refusal.
 
 Why the rig needs it: an idle league emits packets on days one, two and three and
 then goes quiet. Longer runs of traffic -- and any traffic carrying a score change
 or a message -- need someone to actually play.
 
-Two halves, the same shape as `node.run()`:
+The walk itself -- prompts, turns, status, IP mail, IPScores, quitting -- is
+`sr_harness.bre.Player`, and what was learned driving the game lives with it
+(sr-harness's `bre-harness` skill). What stays here is the rig's own part:
 
-  * the caller API (`visit`, `read_history`) runs as the rig user and shells into
-    the node's own unix user;
-  * `main()` is what runs over there, driving dosemu on a pty.
-
-The walks were derived by observation against a real v0.988 install, not from the
-docs; `PROMPTS` below is a transcript of what the game actually asks.
+  * `agent_round`, which hands the wheel to bre_agent;
+  * the caller API (`visit`, `read_history`), which runs as the rig user and
+    shells into the node's own unix user;
+  * `main()`, which is what runs over there, driving dosemu on a pty.
 """
 import json
-import re
 import subprocess
 import sys
-import time
 from pathlib import Path
 
-from rig.dosdrive import DosSession
+from sr_harness import Install, bre
+from sr_harness.bre import parse_status  # noqa: F401  (re-exported)
+
 from rig.layout import DOSEMU_CONF, LOGS, VENV_PYTHON, League, Node
 
-# BRE's main menu. Anchoring on the banner rather than on "Choice>" matters: the
-# prompt string alone also appears on every submenu, and inside the game's own
-# help text.
-MAIN_MENU = re.compile(r"\(2\) See Status")
-PAUSED = r">Paused<"
-
-# A local-mode door file: COM port 0. Without it BRE waits on a modem that is not
-# there. Seven lines, CRLF, as SETUP.SR documents.
-DOORFILE = "{name}\r\n1\r\n1\r\n0\r\n38400\r\n0\r\n-1\r\n{name}\r\n"
-
-# The BBS user name in that door file should be UNIQUE ACROSS THE LEAGUE. When
+# The BBS user name in the door file should be UNIQUE ACROSS THE LEAGUE. When
 # duplicate checking is on -- it is a league setting, page 2 of the configuration
 # editor during RESET, and changeable mid-league -- a name already playing on
 # another board is refused outright:
@@ -56,196 +45,13 @@ def door_user(node_index: int) -> str:
     return f"TEST PILOT {node_index:02d}"
 
 
-def _prompts(realm: str, on_continue="N"):
-    """(regex, keys) pairs, matched in order against the *live prompt only*.
-
-    Order is significant twice over:
-      * "Do you wish to continue?" must precede the generic "Continue?", whose
-        pattern also matches it -- and that prompt is how BRE advances to the
-        next turn, so answering it wrongly either stops after one turn or plays
-        every turn the realm has. `on_continue` may be a callable so the count
-        can live in the answer.
-      * the generic yes/no fallback must come last, or it eats the specific ones.
-
-    `<CR>` on a yes/no prompt takes whichever answer the game capitalised, which
-    is what "play a turn without doing anything" means -- the defaults are the
-    do-nothing path, and BRE offers them everywhere.
-    """
-    return [
-        # ── getting in, and creating the realm on first play ──────────────
-        (r"Do you want ANSI Graphics",   "Y"),
-        (r"IBM Characters",              "Y"),
-        (r"Name your Realm",             f"{realm}\r"),
-        (r"Name Your Empire",            "Y"),
-        (r"Would you like Instructions", "N"),
-        # ── the daily turn sequence ───────────────────────────────────────
-        # Y plays another turn, N ends play and returns to the main menu.
-        (r"Do you wish to continue",     on_continue),
-        (r"Do you wish to send a message", "\r"),
-        (r"Do you wish to visit the Bank", "\r"),
-        # "How much will you give? (40; 40)" / "Buy how many Jets? (0; 120)"
-        (r"\(\s*[\d,]+;\s*[\d,]+\s*\)\s*$", "\r"),
-        # Interplanetary mail is shown at the START OF PLAY, after any local
-        # messages -- never under (6) Read Messages -- and each one waits on its
-        # own reader prompt, which looks nothing like a menu:
-        #     [R]  Reply, [D]  Delete, [I]  Ignore, or [Q]  Quit>
-        # Q leaves the mail alone and closes the reader. The text has already
-        # been captured by then (see play_turns), so nothing is lost by not
-        # paging through the rest.
-        (r"\[R\]\s+Reply|\[Q\]\s+Quit>", "Q"),
-        (PAUSED,                         "\r"),
-        (r"Continue\?",                  "Y"),
-        (r"\[Hit a key\]|any key",       "\r"),
-        # Quit out of every submenu: Diplomacy, Food Hall, Covert Ops, Bank,
-        # Spending, Attacks, Trading.
-        (r"Choice>",                     "0"),
-        (r"\(y/N\)|\(Y/n\)",             "\r"),
-    ]
-
-
-class Player:
-    """One interactive BRE session, as a player."""
+class Player(bre.Player):
+    """One interactive BRE session on a rig install, as a player."""
 
     def __init__(self, install: Path, exe: str, dos_path: str, realm: str,
                  user: str = "TEST PILOT", transcript=None, conf=DOSEMU_CONF):
-        self.install, self.realm, self.user = Path(install), realm, user
-        self.events = []
-        self.turn_text = ""
-
-        (self.install / "DOORFILE.SR").write_bytes(
-            DOORFILE.format(name=user).encode("latin-1"))
-        (self.install / "PLAY.BAT").write_bytes(
-            f"@ECHO OFF\r\nC:\r\nCD {dos_path}\r\n{exe} FULL\r\nEXIT\r\n".encode())
-        # inuse.flg is the game's mutex; a killed run leaves one behind and every
-        # later run exits 1 having printed nothing about why.
-        (self.install / "inuse.flg").unlink(missing_ok=True)
-
-        self.session = DosSession(
-            ["/usr/bin/dosemu", "-f", str(conf), "-K", str(self.install),
-             "-E", "PLAY.BAT"],
-            term="linux", transcript=transcript,
-        )
-
-    # ── reading the screen ────────────────────────────────────────────────
-    @property
-    def screen(self) -> str:
-        return self.session.screen_text()
-
-    @property
-    def prompt(self) -> str:
-        """The line the game is waiting on.
-
-        Answers are matched against this and never against dosdrive's
-        `raw_text()`: that is append-only history, so a prompt seen once matches
-        forever and its answer re-fires into whatever is on screen later. On a
-        short provisioning walk that never shows; on a player walk it types
-        stray keys into the realm-name field and wanders into the buy menu.
-        """
-        for line in reversed(self.screen.splitlines()):
-            text = line.strip()
-            if text and "F2=Extra Information" not in text:
-                return text
-        return ""
-
-    def at_main_menu(self) -> bool:
-        screen = self.screen
-        return bool(MAIN_MENU.search(screen)) and "Choice>" in self.prompt \
-            and not re.search(PAUSED, screen)
-
-    # ── driving ───────────────────────────────────────────────────────────
-    def answer_until(self, done, prompts, timeout=300.0, label="walk"):
-        """Answer the live prompt until `done`, or give up.
-
-        An answer re-fires only once the whole screen has changed since it last
-        fired. Keying that on the prompt *line* instead stalls forever: every
-        page of BRE's instructions ends in the same "Continue? (Y/n)".
-        """
-        compiled = [(re.compile(p, re.I), k) for p, k in prompts]
-        fired, deadline = {}, time.time() + timeout
-        while time.time() < deadline and not self.session.closed:
-            self.session.pump(0.5)
-            screen, prompt = self.screen, self.prompt
-            if done(self):
-                return True
-            for i, (rx, keys) in enumerate(compiled):
-                if not rx.search(prompt):
-                    continue
-                if fired.get(i) == screen:
-                    break
-                keys = keys() if callable(keys) else keys
-                self.events.append(f"{label}: {prompt!r} <- {keys!r}")
-                self.session.send(keys)
-                fired[i] = screen
-                time.sleep(0.5)
-                break
-        return False
-
-    def start(self, timeout=300.0):
-        """Walk from launch to the main menu, creating the realm if new."""
-        ok = self.answer_until(lambda p: p.at_main_menu(), _prompts(self.realm),
-                               timeout, label="entry")
-        if not ok:
-            hint = ""
-            if "Duplicate User" in self.screen:
-                hint = (f" -- the BBS user name {self.user!r} is already playing on "
-                        "another board in this league, and BRE refuses the join")
-            raise TimeoutError(
-                f"never reached BRE's main menu{hint}; last prompt was "
-                f"{self.prompt!r}\n--- screen ---\n{self.screen}"
-            )
-        return self
-
-    def choose(self, key: str, settle: float = 1.5):
-        """Press a key at a menu and let the screen catch up."""
-        self.session.send(key)
-        time.sleep(settle)
-        self.session.pump(settle)
-
-    def status(self, timeout=60.0) -> dict:
-        """Read (2) See Status and parse it."""
-        self.choose("2")
-        self.answer_until(lambda p: p.at_main_menu(),
-                          [(PAUSED, "\r")], timeout, label="status")
-        return parse_status(self.session.raw_text(20000))
-
-    def read_screens(self, *keys, timeout=180.0, label="read") -> str:
-        """Press `keys` from the main menu, page through whatever comes back, and
-        return the text produced -- then end up back at the main menu.
-
-        Used for the read-only screens (IPScores, Read Messages), where what
-        matters is what the game says, not a state change.
-        """
-        start = len(self.session._buf)
-        for key in keys:
-            self.choose(key)
-        self.answer_until(
-            lambda p: p.at_main_menu(),
-            [(PAUSED, "\r"), (r"Continue\?", "Y"), (r"\[Hit a key\]|any key", "\r"),
-             (r"Choice>", "0")],
-            timeout, label=label)
-        return _strip(bytes(self.session._buf[start:]))
-
-    # (9) InterPlanetary Ops, (1) View IPScores opens a menu of reports, not a
-    # listing: (1) Top Planets by Score ... (5) Top Players by Score ... (0) Quit.
-    # Individual realms appear only under the *Players* reports; the Planets ones
-    # are per-board totals and never name a realm.
-    IP_SCORE_REPORTS = {"planets_by_score": "1", "planets_by_worth": "2",
-                        "planets_by_land": "3", "planets_by_density": "4",
-                        "players_by_score": "5", "players_by_worth": "6",
-                        "players_by_land": "7", "players_by_density": "8"}
-
-    def ip_scores(self, report: str = "players_by_score", timeout=180.0) -> str:
-        """(9) InterPlanetary Ops, (1) View IPScores, then one report.
-
-        This is where another planet's realms appear once their packet has been
-        ingested, so it is how a scenario checks that a score really crossed.
-        """
-        key = self.IP_SCORE_REPORTS.get(report, report)
-        return self.read_screens("9", "1", key, timeout=timeout, label="ipscores")
-
-    def read_messages(self, timeout=180.0) -> str:
-        """(6) Read Messages."""
-        return self.read_screens("6", timeout=timeout, label="messages")
+        super().__init__(Install(install, exe, dos_path=dos_path, conf=conf),
+                         realm=realm, user=user, transcript=transcript)
 
     # ── the decision loop ─────────────────────────────────────────────────
     # bre_agent decides *what* to do; only send_message and wait have a real
@@ -284,153 +90,6 @@ class Player:
             "excluded": decision.excluded,
             "status": status,
         }
-
-    def play_turns(self, count: int = 1, timeout=900.0):
-        """Play `count` turns, taking every default -- the do-nothing path.
-
-        One press of (1) plays a turn and then asks "Do you wish to continue?";
-        Y runs straight into the next one. So this is a single trip through Play
-        Game, with the answer to that prompt counting down.
-
-        Even a do-nothing turn moves the score, which is the point: a score
-        change is the thing that has to survive the trip to another host.
-        """
-        remaining = {"turns": count}
-        start = len(self.session._buf)
-
-        def on_continue():
-            remaining["turns"] -= 1
-            return "Y" if remaining["turns"] > 0 else "N"
-
-        self.choose("1")
-        ok = self.answer_until(lambda p: p.at_main_menu(),
-                               _prompts(self.realm, on_continue),
-                               timeout, label="turn")
-        if not ok:
-            raise TimeoutError(
-                f"play did not end back at the main menu; last prompt was "
-                f"{self.prompt!r}\n--- screen ---\n{self.screen}"
-            )
-        # Everything the turn printed, kept for callers who need to assert on
-        # what the game said rather than on what it stored. Interplanetary mail
-        # is only readable here -- BRE shows it at the start of play, after any
-        # local messages, and never under (6) Read Messages.
-        self.turn_text = _strip(bytes(self.session._buf[start:]))
-        played = count - max(remaining["turns"], 0)
-        if played < count:
-            raise RuntimeError(
-                f"only {played} of {count} turns were played -- the realm most "
-                f"likely ran out of turns for today"
-            )
-        return played
-
-    def send_ip_message(self, text: str, timeout=180.0):
-        """Send an interplanetary message to every planet.
-
-        (7) Send Messages on the main menu is *local*: it asks "(A-Y,Z=All)
-        Send to:" and only reaches realms on this board. Interplanetary mail --
-        the kind that becomes a packet -- is (9) InterPlanetary Ops, (7) Send
-        Message, and then a scope. (3) All Planets needs no planet number, which
-        keeps this independent of how the league is numbered.
-        """
-        self.choose("9")            # InterPlanetary Operations
-        self.choose("7")            # Send Message
-        self.choose("3")            # All Planets
-        # (?m) inline: dosdrive.wait_for compiles with re.I only, and the editor
-        # prompt is never at the start of the screen buffer.
-        if not self.session.wait_for(r"(?m)^\s*1>", timeout=30):
-            raise RuntimeError(
-                f"the message editor never opened; prompt was {self.prompt!r}\n"
-                f"--- screen ---\n{self.screen}"
-            )
-        for line in text.splitlines() or [text]:
-            self.session.send(line[:68] + "\r")
-            time.sleep(0.4)
-        self.session.send("/S\r")   # /S saves, /A aborts, /C clears
-        ok = self.answer_until(lambda p: p.at_main_menu(), _prompts(self.realm),
-                               timeout, label="message")
-        if not ok:
-            raise RuntimeError(
-                f"did not get back to the main menu after saving the message; "
-                f"prompt was {self.prompt!r}\n--- screen ---\n{self.screen}"
-            )
-        self.events.append(f"sent IP message: {text!r}")
-
-    def quit(self, timeout=180.0):
-        """Leave through (0) Quit.
-
-        Quitting properly is not politeness: FULL's outbound half runs on the way
-        out -- it is what packs the day's mail into a packet -- and a killed
-        session leaves inuse.flg behind, which makes every later run exit 1
-        silently.
-        """
-        self.choose("0")
-        deadline = time.time() + timeout
-        while not self.session.closed and time.time() < deadline:
-            self.session.pump(1.0)
-            if re.search(PAUSED, self.screen):
-                self.session.send("\r")
-        rc = self.session.close(grace=15)
-        (self.install / "inuse.flg").unlink(missing_ok=True)
-        return rc
-
-
-# ── parsing ───────────────────────────────────────────────────────────────
-_ANSI = re.compile(rb"\x1b\[[0-9;?]*[a-zA-Z]|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b\][^\x07]*\x07")
-_C0 = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-
-
-def _strip(raw: bytes) -> str:
-    """Same treatment transcript_service gives a log: drop ANSI, then C0."""
-    text = _ANSI.sub(b"", raw).decode("utf-8", errors="replace")
-    return _C0.sub("", text).replace("\r", "\n")
-
-
-# The See Status block, verbatim from a running v0.988 game:
-#     -*Test Realm*-
-#     Turns: 8
-#     Score: 0
-#     Gold: 1000
-#     Bank: 251,272           <- absent when zero
-#     Population: 100 Million (Tax Rate: 15%)
-#     Popular Support: 100%
-#     Food: 1000
-_FIELDS = {
-    "turns": r"Turns:\s*([\d,]+)",
-    "score": r"Score:\s*([\d,]+)",
-    "gold": r"Gold:\s*([\d,]+)",
-    "bank": r"Bank:\s*([\d,]+)",
-    "population_millions": r"Population:\s*([\d,]+)\s*Million",
-    "tax_rate": r"Tax Rate:\s*([\d,]+)%",
-    "popular_support": r"Popular Support:\s*([\d,]+)%",
-    "food": r"Food:\s*([\d,]+)",
-}
-
-
-# BRE omits a line entirely rather than printing a zero, so a realm holding no
-# cash has no "Gold:" line at all and one with an empty account has no "Bank:".
-# Absent therefore means zero for these two, and only these two -- defaulting the
-# rest would turn a parse failure into a plausible-looking number.
-_ZERO_WHEN_ABSENT = ("gold", "bank")
-
-
-def parse_status(text: str) -> dict:
-    """Pull the status block out of a transcript.
-
-    Reads the *last* occurrence of each field: the screen is repainted, and on a
-    VGA terminal an earlier paint of the same block is still in the history.
-    """
-    out = {}
-    for name, pattern in _FIELDS.items():
-        found = re.findall(pattern, text, re.I)
-        if found:
-            out[name] = int(found[-1].replace(",", ""))
-        elif name in _ZERO_WHEN_ABSENT:
-            out[name] = 0
-    realm = re.findall(r"-\*(.+?)\*-", text)
-    if realm:
-        out["realm_name"] = realm[-1].strip()
-    return out
 
 
 # ── the CLI half: this is what runs as the node's own user ────────────────

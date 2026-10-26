@@ -6,12 +6,13 @@ import shutil
 import threading
 import time
 import toml
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
+from backend.core.config import default_config_path
 from backend.models.database import League, LeagueMembership, Packet, ProcessingRun, ProcessingRunFile
 from backend.core.database import get_session
 from backend.logging_config import get_logger
@@ -30,6 +31,9 @@ logger = get_logger(context="processing")
 # Global lock for processing
 _processing_lock = threading.Lock()
 _processing_task: Optional[asyncio.Task] = None
+# Asked for while a batch ran. There is no poll loop: a packet uploaded during a
+# run would otherwise wait for the next upload, which can be a day away.
+_rerun = False
 
 
 def find_file_case_insensitive(directory: Path, filename: str) -> Optional[Path]:
@@ -57,11 +61,12 @@ def find_file_case_insensitive(directory: Path, filename: str) -> Optional[Path]
 
 def trigger_processing():
     """Trigger background processing (non-blocking)"""
-    global _processing_task
+    global _processing_task, _rerun
 
-    # Don't start multiple processing tasks
+    # One batch at a time; the one running goes round again when it finishes.
     if _processing_task and not _processing_task.done():
-        logger.debug("Task already running, skipping")
+        logger.debug("Task already running, another pass queued")
+        _rerun = True
         return
 
     try:
@@ -84,16 +89,31 @@ def trigger_processing():
 async def process_batch():
     """Main processing batch - runs asynchronously"""
 
+    global _rerun
     logger.debug("process_batch() called")
 
     # Try to acquire lock (non-blocking)
     if not _processing_lock.acquire(blocking=False):
-        logger.debug("Already running, skipping")
+        logger.debug("Already running, another pass queued")
+        _rerun = True
         return
 
     try:
-        # Load config
-        config = toml.load("config.toml")
+        while True:
+            _rerun = False
+            await _process_once()
+            if not _rerun:
+                break
+            logger.info("Packets arrived during the run; processing again")
+    finally:
+        _processing_lock.release()
+
+
+async def _process_once():
+    try:
+        # Read afresh each batch, so a league added to the file is processed
+        # without a restart -- but the file the hub was started with.
+        config = toml.load(default_config_path())
 
         db = get_session()
         try:
@@ -105,8 +125,6 @@ async def process_batch():
             db.close()
     except Exception as e:
         logger.exception(f"Fatal error in process_batch: {e}")
-    finally:
-        _processing_lock.release()
 
 
 class ProcessingService:
@@ -126,14 +144,20 @@ class ProcessingService:
         # league groups of one batch. See step 6 of process_game_batch().
         self._unconsumed_count = 0
 
-    async def process_batch(self):
-        """Process all unprocessed packets"""
+    async def process_batch(self, also: tuple = ()) -> Optional[ProcessingRun]:
+        """Process all unprocessed packets, and return the run (None if there
+        was nothing to run).
+
+        `also` names leagues, as (game code, league number) like ("BRE", "015"),
+        whose game runs even with no packets waiting: a game reset's first
+        PLANETARY, which is what sends the league its Game Start.
+        """
         logger.info("Starting batch...")
 
         # Get unprocessed packets
         packets = self.db.query(Packet).filter(Packet.processed_at == None).all()
 
-        if not packets:
+        if not packets and not also:
             logger.info("No packets to process")
             # Still check for nodelists and other outbound files
             await self.scan_outbound_folders()
@@ -156,6 +180,8 @@ class ProcessingService:
                 logger.warning(f"Skipping packet {p.filename}: unknown game type '{league.game_type}'")
                 continue
             groups[(game_type_str, league.league_id)].append(p)
+        for key in also:
+            groups.setdefault(tuple(key), [])
 
         if not groups:
             logger.warning("No packets with valid league associations found")
@@ -178,16 +204,20 @@ class ProcessingService:
                 # Each group is one league, and the transcript for that group is
                 # the only place its movements are named. Remember which league
                 # it was before the outputs get concatenated together.
-                league_of_group[key] = group_packets[0].league_id
+                if group_packets:
+                    league_of_group[key] = group_packets[0].league_id
+                else:
+                    row = self._league(game_type_str, league_id_str)
+                    league_of_group[key] = row.id if row else None
                 logger.info(
                     f"Processing {len(group_packets)} packet(s) for "
                     f"{game_type_str} league {league_id_str}"
                 )
                 results[key] = await self.process_game_batch(
-                    game_type_str, group_packets, run.id
+                    game_type_str, group_packets, run.id, league_id_str
                 )
 
-            run.completed_at = datetime.now()
+            run.completed_at = utcnow()
 
             # A group that failed leaves its packets unprocessed and its files in
             # hub inbound, so the run did not do what it was asked. Reporting that
@@ -220,7 +250,7 @@ class ProcessingService:
 
         except Exception as e:
             logger.error(f"Error: {e}")
-            run.completed_at = datetime.now()
+            run.completed_at = utcnow()
             run.status = "failed"
             run.error_message = str(e)
 
@@ -260,7 +290,7 @@ class ProcessingService:
         from backend.services.nodelist_generator import NodelistGenerator
         data_dir = self.config.get("server", {}).get("data_dir", "./data")
         nodelist_gen = NodelistGenerator(
-            self.db, data_dir, self.config.get("hub", {})
+            self.db, data_dir, self.config.get("hub", {}), self.config.get("dosemu", {})
         )
         for (game_type_str, league_id_str) in groups.keys():
             league_obj = (
@@ -276,6 +306,7 @@ class ProcessingService:
 
         # Always scan outbound folders for nodelists
         await self.scan_outbound_folders()
+        return run
 
 
     def get_game_type(self, packet: Packet) -> str:
@@ -369,17 +400,30 @@ class ProcessingService:
         if recorded:
             logger.info(f"Run {run.id}: recorded {recorded} item movement(s)")
 
-    async def process_game_batch(self, game_type: str, packets: list, run_id: int):
-        """Process a batch of packets for one game"""
-        # Get league_id from first packet (all packets in batch should be for same league)
-        if not packets:
-            return {"status": "success", "message": "No packets to process"}
+    def _league(self, game_type: str, league_number: str) -> Optional[League]:
+        return (self.db.query(League)
+                .filter(League.league_id == league_number,
+                        League.game_type == game_for_code(game_type).letter)
+                .first())
 
-        # Get league_id as string for config lookup
-        first_packet = packets[0]
-        league = self.db.query(League).filter(League.id == first_packet.league_id).first()
-        if not league:
-            return {"status": "error", "error": f"League not found for packet {first_packet.filename}"}
+    async def process_game_batch(self, game_type: str, packets: list, run_id: int,
+                                 league_number: Optional[str] = None):
+        """Process a batch of packets for one game.
+
+        With `league_number` the game runs even when `packets` is empty (see
+        process_batch's `also`); without it, the league is the packets' own.
+        """
+        if league_number is not None:
+            league = self._league(game_type, league_number)
+            if not league:
+                return {"status": "error", "error": f"League {league_number} not found"}
+        else:
+            if not packets:
+                return {"status": "success", "message": "No packets to process"}
+            first_packet = packets[0]
+            league = self.db.query(League).filter(League.id == first_packet.league_id).first()
+            if not league:
+                return {"status": "error", "error": f"League not found for packet {first_packet.filename}"}
 
         league_id = league.league_id  # This is the string league ID like "555"
 
@@ -450,7 +494,8 @@ class ProcessingService:
             hub_index = self.config["hub"]["bbs_index"]
 
             for packet in packets:
-                packet.processed_at = datetime.now()
+                packet.processed_at = utcnow()
+                packet.is_processed = True
 
                 # Archive - move from hub inbound to hub processed
                 src = find_file_case_insensitive(hub_inbound_dir, packet.filename)
@@ -696,8 +741,11 @@ class ProcessingService:
 
             try:
                 packet_info = parse_packet_filename(packet_file.name)
+                if not packet_info:
+                    logger.warning(f"Not collecting {packet_file.name}: not a packet's name")
+                    continue
 
-                # Skip hub-destined packets (watcher handles those)
+                # The game's own (it is the hub): nothing to route
                 if packet_info["dest_bbs_index"] == hub_index:
                     continue
 
@@ -758,7 +806,10 @@ class ProcessingService:
                     .order_by(Packet.id.desc())
                     .first()
                 )
-                if existing is not None and existing.is_downloaded:
+                # downloaded_at too: rows from January 2026 have it set with
+                # is_downloaded still false, and must not take a new packet's place.
+                if existing is not None and (existing.is_downloaded
+                                             or existing.downloaded_at is not None):
                     existing = None
 
                 if existing:
@@ -769,7 +820,8 @@ class ProcessingService:
                     existing.file_size = len(content)
                     existing.checksum = file_hash
                     existing.processing_run_id = run_id
-                    existing.processed_at = datetime.now()
+                    existing.processed_at = utcnow()
+                    existing.is_processed = True
                     existing.file_data = None  # the file on disk is the packet now
                     logger.info(f"Updated pending outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
                 else:
@@ -783,7 +835,8 @@ class ProcessingService:
                         file_size=len(content),
                         checksum=file_hash,
                         processing_run_id=run_id,
-                        processed_at=datetime.now(),
+                        processed_at=utcnow(),
+                        is_processed=True,
                     )
                     self.db.add(packet)
                     logger.info(f"Collected outbound: {normalized_filename}")
@@ -872,8 +925,8 @@ class ProcessingService:
                     # Update existing packet with new metadata (file on disk)
                     existing.file_size = file_size
                     existing.checksum = checksum
-                    existing.uploaded_at = datetime.utcnow()
-                    existing.processed_at = datetime.utcnow()  # Mark as processed
+                    existing.uploaded_at = utcnow()
+                    existing.processed_at = utcnow()  # Mark as processed
                     existing.is_processed = True
                     existing.is_downloaded = False
                     existing.downloaded_at = None
@@ -891,7 +944,7 @@ class ProcessingService:
                         file_size=file_size,
                         checksum=checksum,
                         is_processed=True,  # Nodelists don't need processing
-                        processed_at=datetime.utcnow(),  # Mark as processed immediately
+                        processed_at=utcnow(),  # Mark as processed immediately
                         is_downloaded=False
                     )
                     self.db.add(packet)

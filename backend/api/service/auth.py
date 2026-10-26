@@ -1,15 +1,19 @@
 """Service API authentication (OAuth2 client credentials)"""
 
-from datetime import datetime
+from typing import Optional
+from urllib.parse import unquote_plus
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.rate_limiter import check_rate_limit, record_failed_attempt
 from backend.core.security import (
     create_service_token,
     get_current_client,
+    get_jwt_settings,
     verify_client_credentials,
 )
 from backend.logging_config import get_logger
@@ -20,13 +24,19 @@ logger = get_logger(context="service_auth")
 
 router = APIRouter()
 
+# RFC 6749 2.3.1: a client may send its credentials as HTTP Basic instead of in
+# the form. Not required, so the form alone still works.
+basic = HTTPBasic(auto_error=False, description="client_id and client_secret, as RFC 6749 2.3.1")
+
 
 @router.post("/token", response_model=TokenResponse, summary="Get Access Token")
 async def login_for_access_token(
     request: Request,
+    response: Response,
     grant_type: str = Form(..., description="Must be 'client_credentials'"),
-    client_id: str = Form(..., description="Your client ID provided by the hub administrator"),
-    client_secret: str = Form(..., description="Your client secret provided by the hub administrator"),
+    client_id: Optional[str] = Form(None, description="Your client ID provided by the hub administrator"),
+    client_secret: Optional[str] = Form(None, description="Your client secret provided by the hub administrator"),
+    credentials: Optional[HTTPBasicCredentials] = Depends(basic),
     db: Session = Depends(get_db),
 ):
     """
@@ -39,7 +49,10 @@ async def login_for_access_token(
     - `client_id`: Your client ID
     - `client_secret`: Your client secret
 
-    **Returns:** Access token valid for 24 hours
+    Or send `client_id` and `client_secret` as HTTP Basic credentials
+    (RFC 6749 2.3.1) and only `grant_type` in the form. Not both.
+
+    **Returns:** An access token, and in `expires_in` how many seconds it lasts
 
     **Example:**
     ```bash
@@ -59,6 +72,20 @@ async def login_for_access_token(
             detail="Unsupported grant_type. Only 'client_credentials' is supported",
         )
 
+    if credentials is not None:
+        if client_id is not None or client_secret is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Send the client credentials one way: HTTP Basic or the form, not both",
+            )
+        # Form-encoded before they were base64'd (RFC 6749 2.3.1).
+        client_id, client_secret = unquote_plus(credentials.username), unquote_plus(credentials.password)
+    if not client_id or not client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="client_id and client_secret are required",
+        )
+
     # Verify credentials
     client = verify_client_credentials(client_id, client_secret, db)
 
@@ -71,7 +98,7 @@ async def login_for_access_token(
         )
 
     # Update last_seen, and the onboarding Verify step's first sign-in
-    client.last_seen = datetime.utcnow()
+    client.last_seen = utcnow()
     if client.first_token_at is None:
         client.first_token_at = client.last_seen
     db.commit()
@@ -81,7 +108,9 @@ async def login_for_access_token(
     access_token = create_service_token(client.client_id)
     logger.info(f"Token created successfully for {client.client_id}")
 
-    return TokenResponse(access_token=access_token, token_type="bearer")
+    response.headers["Cache-Control"] = "no-store"     # RFC 6749 5.1
+    return TokenResponse(access_token=access_token, token_type="bearer",
+                         expires_in=get_jwt_settings()["access_token_expire_minutes"] * 60)
 
 
 @router.get("/verify", response_model=ClientVerifyResponse, summary="Verify Access Token")

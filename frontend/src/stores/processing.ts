@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { processingApi } from '@/services/api'
+import { processingApi, apiError } from '@/services/api'
 
 export interface ProcessingRun {
   id: number
@@ -9,6 +9,7 @@ export interface ProcessingRun {
   duration?: string
   packets_processed: number
   status: string  // "running", "completed", "failed"
+  leagues: string[]  // what it processed, e.g. ["015B", "015F"]
   league_name?: string
 }
 
@@ -22,6 +23,7 @@ export interface ProcessingRunFile {
   id: number
   filename: string
   file_type: string  // "score", "routes", "bbsinfo"
+  league_name?: string  // the league it came from, e.g. "015B"
   file_data?: string
   file_data_html?: string
 }
@@ -33,6 +35,7 @@ export interface ProcessingRunDetail {
   duration?: string
   packets_processed: number
   status: string
+  leagues: string[]
   league_name?: string
   error_message?: string
   dosemu_output?: string
@@ -59,8 +62,7 @@ export const useProcessingStore = defineStore('processing', () => {
       const response = await processingApi.listRuns(limit)
       runs.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load processing runs'
+      error.value = apiError(err, 'Failed to load processing runs')
     } finally {
       loading.value = false
     }
@@ -74,8 +76,7 @@ export const useProcessingStore = defineStore('processing', () => {
       const response = await processingApi.getRun(id)
       currentRun.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load processing run'
+      error.value = apiError(err, 'Failed to load processing run')
     } finally {
       loading.value = false
     }
@@ -91,8 +92,7 @@ export const useProcessingStore = defineStore('processing', () => {
       await loadRuns()
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to trigger processing'
+      error.value = apiError(err, 'Failed to trigger processing')
       return false
     } finally {
       loading.value = false

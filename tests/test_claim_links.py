@@ -19,12 +19,14 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import app, service_app, management_app
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.security import get_current_user, get_password_hash, verify_password
 from backend.models.database import (
     Base,
     ClaimLink,
     Client,
+    ClientOwner,
     FtnAddress,
     League,
     LeagueMembership,
@@ -144,7 +146,7 @@ def test_issue_gives_a_link_and_stores_only_its_hash(api, bbs):
     assert token not in link.token_hash
     assert link.issued_by == "admin"
     expires = datetime.fromisoformat(body["expires_at"].replace("Z", "+00:00"))
-    assert timedelta(hours=71) < expires.replace(tzinfo=None) - datetime.utcnow() <= timedelta(hours=72)
+    assert timedelta(hours=71) < expires.replace(tzinfo=None) - utcnow() <= timedelta(hours=72)
 
 
 def test_issuing_changes_nothing_for_the_bbs(api, bbs):
@@ -238,7 +240,7 @@ def test_an_expired_link_cannot_be_claimed(api, bbs):
     client, db = api
     token, _ = _issue(client, bbs)
     link = db.query(ClaimLink).one()
-    link.expires_at = datetime.utcnow() - timedelta(seconds=1)
+    link.expires_at = utcnow() - timedelta(seconds=1)
     db.commit()
 
     assert client.get(f"{CLAIM}/{token}").json()["state"] == "expired"
@@ -327,6 +329,44 @@ def test_a_bbs_with_no_leagues_gets_a_config_without_any(api, bbs):
 
     assert "leagues" not in toml.loads(body["config_toml"])
     assert body["leagues"] == []
+
+
+# -- the sample config on the BBS's page ---------------------------------------
+
+def test_sample_configs_carry_everything_but_the_secret(api, bbs):
+    client, db = api
+    secret_hash = db.get(Client, bbs).client_secret
+
+    linux = client.get(f"{CLIENTS}/{bbs}/config/linux")
+    windows = client.get(f"{CLIENTS}/{bbs}/config/windows")
+
+    assert linux.status_code == 200 and windows.status_code == 200
+    assert 'filename="config.toml"' in linux.headers["content-disposition"]
+    assert 'filename="config.psd1"' in windows.headers["content-disposition"]
+    config = toml.loads(linux.text)
+    assert config["hub"] == {"url": "https://testserver", "client_id": "jersey",
+                             "client_secret": "CHANGE-ME"}
+    assert config["leagues"]["BRE"]["015"]["bbs_index"] == 5
+    assert "no client secret" in linux.text
+    assert "ClientSecret = 'CHANGE-ME'" in windows.text and "no client secret" in windows.text
+    # Downloading one replaces nothing: the BBS keeps the secret it has.
+    db.expire_all()
+    assert db.get(Client, bbs).client_secret == secret_hash
+    assert db.query(ClaimLink).count() == 0
+
+
+def test_sample_config_is_for_the_bbss_own_sysops(api, bbs):
+    client, db = api
+    management_app.dependency_overrides[get_current_user] = _sysop
+    db.add(SysopUser(id=2, username="sysop", hashed_password="x", is_superuser=False))
+    db.commit()
+
+    assert client.get(f"{CLIENTS}/{bbs}/config/linux").status_code == 404
+
+    db.add(ClientOwner(sysop_user_id=2, client_id=bbs))
+    db.commit()
+    assert client.get(f"{CLIENTS}/{bbs}/config/linux").status_code == 200
+    assert client.get(f"{CLIENTS}/{bbs}/config/amiga").status_code == 404
 
 
 def test_configured_public_url_is_used(api, bbs, monkeypatch):

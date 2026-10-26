@@ -39,6 +39,11 @@ const editCity = ref('')
 const editState = ref('')
 const editCountry = ref('')
 const newSecret = ref('')
+// A routine rotation keeps the old secret a day, so the BBS isn't cut off
+// before its config is edited; a leaked one is stopped at once.
+const overlapHours = ref(24)
+const newSecretOldUntil = ref<string | null>(null)
+const secretError = ref('')
 
 // FTN addresses belong to the BBS; a league membership picks one of them.
 // Admin only: renumbering one moves every league that uses it.
@@ -275,10 +280,15 @@ async function handleToggleActive() {
 }
 
 async function handleRegenerateSecret() {
-  const secret = await clientsStore.regenerateSecret(clientId.value)
-  if (secret) {
-    newSecret.value = secret
+  const result = await clientsStore.regenerateSecret(clientId.value, overlapHours.value)
+  if (result) {
+    newSecret.value = result.client_secret
+    newSecretOldUntil.value = result.old_secret_until
     showSecretModal.value = true
+    secretError.value = ''
+    if (clientsStore.currentClient) clientsStore.currentClient.old_secret_until = result.old_secret_until
+  } else {
+    secretError.value = clientsStore.error || 'Could not regenerate the secret'
   }
 }
 
@@ -433,6 +443,19 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
                 </div>
               </dl>
 
+              <div class="sample-config mt-4">
+                Sample client config:
+                <a :href="clientsApi.sampleConfigUrl(clientId, 'linux')" download>config.toml</a> (Linux)
+                &middot;
+                <a :href="clientsApi.sampleConfigUrl(clientId, 'windows')" download>config.psd1</a> (Windows)
+                <p class="form-hint mt-1">
+                  Your hub address, client ID, leagues and BBS numbers are filled in. Before you use it,
+                  replace every CHANGE-ME: the game paths, which only you know, and the client secret,
+                  which the hub does not keep. Use the secret you saved when you claimed your credentials,
+                  or regenerate it below. Then run the validator before the first sync.
+                </p>
+              </div>
+
               <div v-if="authStore.isAdmin" class="credential-actions mt-4">
                 <select v-if="clientsStore.currentClient.owners?.length" v-model="claimFor" class="claim-for">
                   <option value="">For anyone with the link</option>
@@ -443,9 +466,6 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
                 <button class="btn btn-primary btn-sm" @click="handleIssueClaimLink">
                   Issue Claim Link
                 </button>
-                <button class="btn btn-secondary btn-sm" @click="handleRegenerateSecret">
-                  Regenerate Secret
-                </button>
               </div>
               <p v-if="authStore.isAdmin" class="form-hint mt-2">
                 <template v-if="claimStatus">Last claim link: {{ claimStatusText(claimStatus) }}.</template>
@@ -454,6 +474,28 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
                 </template>
               </p>
               <div v-if="claimError" class="alert alert-danger mt-2">{{ claimError }}</div>
+
+              <div class="credential-actions mt-4">
+                <select v-model="overlapHours" class="claim-for">
+                  <option :value="24">Keep the old secret working for 24 hours</option>
+                  <option :value="0">Stop the old secret now</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" @click="handleRegenerateSecret">
+                  Regenerate Secret
+                </button>
+              </div>
+              <p class="form-hint mt-2">
+                <template v-if="clientsStore.currentClient.old_secret_until">
+                  The old secret works until
+                  {{ new Date(clientsStore.currentClient.old_secret_until).toLocaleString() }}; after that,
+                  only the new one does.
+                </template>
+                <template v-else>
+                  A new secret goes in the client config. If the old one got out, stop it now: that also
+                  signs the BBS out until its config has the new one.
+                </template>
+              </p>
+              <div v-if="secretError" class="alert alert-danger mt-2">{{ secretError }}</div>
             </div>
           </div>
 
@@ -864,6 +906,14 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
             <div class="alert alert-warning mb-4">
               Save this secret now! It will not be shown again.
             </div>
+            <p v-if="newSecretOldUntil" class="form-hint mb-4">
+              The old secret keeps working until {{ new Date(newSecretOldUntil).toLocaleString() }}.
+              Put this one in the client config before then.
+            </p>
+            <p v-else class="form-hint mb-4">
+              The old secret has stopped working, and the BBS is signed out until its client config has
+              this one.
+            </p>
             <div class="form-group">
               <label>Client Secret</label>
               <div class="secret-display">

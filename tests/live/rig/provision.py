@@ -9,7 +9,7 @@ and dosemu wants a real home directory. Drive it from the rig owner with:
 Provisioning is not the pure file-copy the design doc assumed. `BREDATA -Y`
 regenerates GAME/ (help text, events, news templates) but not DATA/; virgin game
 state only comes from `BRE.EXE RESET`, which is interactive and is driven here
-through dosdrive.py.
+through sr-harness's DosSession.
 """
 import argparse
 import json
@@ -22,8 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rig import dosrun
-from rig.dosdrive import DosSession, expand
+from sr_harness.run import run as dosrun
+from sr_harness.session import DosSession, expand
+
 from rig.layout import DOSEMU_CONF, LEAGUES, LOGS, NODES, League, Node
 
 
@@ -179,7 +180,7 @@ def provision(league: League, node: Node, log_dir: Path = LOGS) -> Path:
     # BREDATA/FEDATA regenerates GAME/, not DATA/.
     _batch(target, "GAMEDATA.BAT", league.dos_path(node),
            f"{league.g.data_exe.replace('.EXE', '')} -Y")
-    dosrun.run(_dosemu(target, "GAMEDATA.BAT"),
+    dosrun(_dosemu(target, "GAMEDATA.BAT"),
                log_dir / f"prov_{league.dirname(node.index)}_gamedata.log",
                timeout=120)
 

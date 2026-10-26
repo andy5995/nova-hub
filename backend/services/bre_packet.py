@@ -47,7 +47,7 @@ import hashlib
 import re
 import struct
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 HEADER_SIZE = 12
@@ -120,12 +120,22 @@ class PacketFormatError(ValueError):
     pass
 
 
-def unrle(payload: bytes) -> bytes:
+# Two bytes of RLE can stand for 255 zeros, so a packet decompresses to far
+# more than it uploads: a 10 MB packet of nothing but runs would be 1.3 GB.
+# Real records are at most 2,659 bytes (every BRE packet on dev, Oct 2026) and
+# real packets at most 12.6 KB decompressed, so these leave room to spare.
+MAX_RECORD_BODY = 16 * 1024
+MAX_PACKET_BODY = 1024 * 1024
+
+
+def unrle(payload: bytes, limit: int = MAX_RECORD_BODY) -> bytes:
     """0xFD n is n zero bytes; 0xFD 0x00 is a literal 0xFD.
 
     A 0xFD as the very last byte is also literal: the encoder writes a trailing
     0xFD bare. Both cases were found in production, where 0xFD falls inside an
     attack ID often enough to matter -- decoding it as an escape shifts the ID.
+
+    PacketFormatError past `limit` bytes, before allocating them.
     """
     out, i = bytearray(), 0
     while i < len(payload):
@@ -137,11 +147,15 @@ def unrle(payload: bytes) -> bytes:
         else:
             out.append(b)
             i += 1
+        if len(out) > limit:
+            raise PacketFormatError(f"a record decompresses past {limit} bytes")
     return bytes(out)
 
 
 def real48(raw: bytes) -> float:
     """Turbo Pascal's 6-byte Real: exponent byte, then 39-bit mantissa and sign."""
+    if len(raw) != 6:
+        raise PacketFormatError(f"a Real is 6 bytes, not {len(raw)}")
     if raw[0] == 0:
         return 0.0
     mantissa = int.from_bytes(raw[1:6], "little")
@@ -150,8 +164,14 @@ def real48(raw: bytes) -> float:
 
 
 def timestamp(raw: bytes) -> Optional[datetime.datetime]:
+    """None for no date, and for one no calendar holds (a damaged record)."""
     days = real48(raw)
-    return _EPOCH + datetime.timedelta(days=days) if days else None
+    if not days:
+        return None
+    try:
+        return _EPOCH + datetime.timedelta(days=days)
+    except (OverflowError, ValueError):
+        return None
 
 
 def record_crc(payload: bytes) -> bytes:
@@ -174,7 +194,7 @@ class Record:
 def parse(packet: bytes) -> List[Record]:
     if len(packet) < HEADER_SIZE:
         raise PacketFormatError(f"{len(packet)} bytes is shorter than the header")
-    records, i = [], HEADER_SIZE
+    records, i, budget = [], HEADER_SIZE, MAX_PACKET_BODY
     while i < len(packet):
         if all(b == TRAILER for b in packet[i:]):
             break
@@ -187,8 +207,9 @@ def parse(packet: bytes) -> List[Record]:
         payload = packet[i + 9:i + 9 + length]
         if len(payload) != length:
             raise PacketFormatError(f"record at offset {i} runs past the end")
-        records.append(Record(rtype, src, dst, record_crc(payload) == crc,
-                              unrle(payload)))
+        data = unrle(payload, min(MAX_RECORD_BODY, budget))
+        budget -= len(data)
+        records.append(Record(rtype, src, dst, record_crc(payload) == crc, data))
         i += RECORD_HEADER_SIZE + length
     return records
 
@@ -274,7 +295,9 @@ def forces(record: Record) -> Forces:
         out.success = tail[_FAILED] == 0
         out.defenders_destroyed = struct.unpack_from("<i", tail, _DESTROYED)[0]
         out.regions_captured = struct.unpack_from("<i", tail, _CAPTURED)[0]
-        out.loss_fraction = real48(tail[_LOSS:_LOSS + 6])
+        loss = real48(tail[_LOSS:_LOSS + 6])
+        # A fraction; anything else is a damaged record, and unknown beats invented.
+        out.loss_fraction = loss if 0.0 <= loss <= 1.0 else None
     return out
 
 
@@ -284,10 +307,33 @@ def attacks(packet: bytes) -> List[Attack]:
 
 
 # ── league settings ───────────────────────────────────────────────────────
-# The League Coordinator's editor settings travel as a Configupdate, a run of
-# u16 words. Located by changing them in BRE EDITOR on the rig (protection
-# 20 -> 0, attacks/day 1 -> 10, lost-attack days 7 -> 1) and diffing the record.
+# The League Coordinator's editor settings travel as a Configupdate. A Game
+# Start (the first run after a league-wide reset) carries the same 240 bytes.
+# Mapped on the rig by resetting 900B from the console with distinctive values
+# in every field and diffing what the hub sent (16 Oct 2026; the captures are
+# tests/fixtures/bre_configupdates.json). Bytes 12, 38, 42 and 58-240 are not
+# settings the editor shows: 12 changes from game to game, 66-73 is the same
+# 8 bytes twice, the rest stayed zero.
 CONFIG_UPDATE = 0x0A
+GAME_START = 0x10
+
+# u16 words, by offset, as catalogue field ids (game_reset/fields.py).
+_WORDS = {14: "turns_per_day", 16: "protection_turns", 18: "land_per_day",
+          20: "interest_rate", 22: "tax_rate", 24: "indiv_attacks",
+          26: "group_attacks", 28: "terrorist_ops", 30: "bombings",
+          32: "lost_attack_days", 34: "investment_rate", 36: "max_region_purchase",
+          40: "initial_land"}
+# Single bytes. The cost and damage choices share one code; Buy Military has its own.
+_CHOICES = {45: "maintenance_costs", 46: "attack_damage", 47: "attack_costs",
+            48: "attack_rewards", 49: "terrorist_costs", 50: "region_costs",
+            51: "trade_costs"}
+_HMLN = {0: "M", 1: "N", 2: "L", 3: "H"}
+_BUY_MILITARY = {0: "Y", 1: "N", 2: "L"}
+_TOGGLES = {75: "gooie", 76: "dupe_checking", 77: "local_attacks",
+            78: "local_scoring", 79: "bombing_ops", 80: "missile_ops",
+            81: "steady_investment"}
+# Sabre: 0 None, 1 User Select, 2 Random, 200 + the dial for Constant.
+_SABRE = {0: "N", 1: "U", 2: "R"}
 
 
 @dataclass
@@ -296,18 +342,49 @@ class LeagueSettings:
     protection_turns: int
     indiv_attacks_per_day: int
     lost_attack_days: int      # the MIT window: no result by then, forces come home
+    # Every setting of BRE's reset editor but the start date, by catalogue
+    # field id, in the catalogue's values (letters for choices, bools for toggles,
+    # ISO dates). A value the map doesn't know is left out, not guessed.
+    settings: dict = field(default_factory=dict)
+
+
+def _date(d: bytes, o: int) -> Optional[str]:
+    y, m, day = struct.unpack_from("<3H", d, o)
+    try:
+        return datetime.date(y, m, day).isoformat()
+    except ValueError:
+        return None
 
 
 def league_settings(record: Record) -> LeagueSettings:
+    """The settings in a Configupdate, or in a Game Start, which shares its layout."""
     d = record.data
-    if record.type != CONFIG_UPDATE or len(d) < 34:
+    if record.type not in (CONFIG_UPDATE, GAME_START) or len(d) < 83:
         raise PacketFormatError(f"{record.name} is not a Configupdate")
-    w = struct.unpack_from("<17H", d, 0)
+    w = struct.unpack_from("<6H", d, 0)
     try:
-        started = datetime.datetime(w[0], w[1], w[2], w[3], w[4], w[5])
+        started = datetime.datetime(*w)
     except ValueError:
         started = None
-    return LeagueSettings(started, w[8], w[12], w[16])
+    out = {fid: struct.unpack_from("<H", d, o)[0] for o, fid in _WORDS.items()}
+    out["max_players"] = d[44]
+    for o, fid in _CHOICES.items():
+        if d[o] in _HMLN:
+            out[fid] = _HMLN[d[o]]
+    if d[74] in _BUY_MILITARY:
+        out["buy_military"] = _BUY_MILITARY[d[74]]
+    for o, fid in _TOGGLES.items():
+        if d[o] in (0, 1):
+            out[fid] = bool(d[o])
+    if d[82] in _SABRE:
+        out["sabre"] = _SABRE[d[82]]
+    elif 200 <= d[82] <= 210:
+        out["sabre"], out["sabre_dial"] = "C", d[82] - 200
+    joined = _date(d, 52)
+    if joined:
+        out["join_date"] = joined
+    return LeagueSettings(started, out["protection_turns"], out["indiv_attacks"],
+                          out["lost_attack_days"], out)
 
 
 if __name__ == "__main__":
@@ -416,7 +493,7 @@ def traffic(record: Record) -> Optional[Traffic]:
     out = Traffic(t, record.name, record.src, record.dst)
     try:
         _read(out, d, t)
-    except (IndexError, struct.error):
+    except (IndexError, struct.error, OverflowError, ValueError):
         pass                # a short record: who and where is still worth having
     if t == NEWS and out.role is None:
         return None
@@ -501,7 +578,15 @@ def _read(out: Traffic, d: bytes, t: int) -> None:
 
 def traffic_details(record: Record) -> Optional[dict]:
     """Hidden game state, for the admin reveal only. None for a Message: its
-    content is never decoded, and for types not yet mapped."""
+    content is never decoded, and for types not yet mapped. PacketFormatError
+    for a record too short to hold what its type says."""
+    try:
+        return _traffic_details(record)
+    except (IndexError, struct.error, OverflowError, ValueError) as exc:
+        raise PacketFormatError(f"{record.name} is damaged: {exc}") from exc
+
+
+def _traffic_details(record: Record) -> Optional[dict]:
     d, t = record.data, record.type
     if t == TERRORIST_OP:
         return {"operation": OPERATIONS.get(d[17], f"op {d[17]}"), "sent": d[11],

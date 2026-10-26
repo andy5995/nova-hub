@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { alertsApi } from '@/services/api'
+import { alertsApi, apiError } from '@/services/api'
 
 export interface Alert {
   id: number
@@ -37,8 +37,7 @@ export const useAlertsStore = defineStore('alerts', () => {
       const response = await alertsApi.list()
       alerts.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load alerts'
+      error.value = apiError(err, 'Failed to load alerts')
     } finally {
       loading.value = false
     }
@@ -57,8 +56,7 @@ export const useAlertsStore = defineStore('alerts', () => {
       }
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to resolve alert'
+      error.value = apiError(err, 'Failed to resolve alert')
       return false
     } finally {
       loading.value = false
@@ -78,8 +76,7 @@ export const useAlertsStore = defineStore('alerts', () => {
       }
       return true
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to unresolve alert'
+      error.value = apiError(err, 'Failed to unresolve alert')
       return false
     } finally {
       loading.value = false

@@ -10,11 +10,18 @@ Two halves here: the cheap structural check that can be run against any config
 including production, and the live proof that a broken path is now detected and
 that repairing it recovers on its own.
 """
+import os
+
 import pytest
 
-from rig import node as node_rig
-from rig.dospath import bbs_cfg_inbound, config_problems, dos_path_problems
-from rig.layout import LEAGUES, NODES
+# rig.dospath takes the 8.3 rule from sr-harness, a rig dependency; see
+# test_player_traffic.py for why collection needs this guard off the rig.
+if os.getenv("NOVATEST_RIG") != "1":
+    pytest.importorskip("sr_harness", reason="sr-harness is a rig-only dependency")
+
+from rig import node as node_rig  # noqa: E402
+from rig.dospath import bbs_cfg_inbound, config_problems, dos_path_problems  # noqa: E402
+from rig.layout import LEAGUES, NODES  # noqa: E402
 
 LEAGUE = LEAGUES["900B"]
 NODE02 = NODES[2]

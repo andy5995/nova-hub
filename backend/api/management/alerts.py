@@ -1,11 +1,11 @@
 """Management API alert management endpoints"""
 
-from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.scope import Scope, get_scope
 from backend.core.security import require_admin
@@ -159,7 +159,8 @@ async def resolve_alert(
     if alert.resolved_at:
         raise HTTPException(status_code=400, detail="Alert is already resolved")
 
-    alert.resolved_at = datetime.now()
+    alert.resolved_at = utcnow()
+    alert.is_resolved = True
     db.commit()
 
     logger.info(f"Alert {alert_id} resolved by {current_user.username}")
@@ -195,6 +196,8 @@ async def unresolve_alert(
         raise HTTPException(status_code=400, detail="Alert is not resolved")
 
     alert.resolved_at = None
+    alert.is_resolved = False
+    alert.resolution_note = None
     db.commit()
 
     logger.info(f"Alert {alert_id} unresolved by {current_user.username}")

@@ -79,3 +79,12 @@ def validate_league_id_format(league_id: str) -> bool:
         False
     """
     return LEAGUE_ID_PATTERN.match(league_id.upper()) is not None
+
+
+def board_hex(membership) -> str:
+    """A member's board index as packet filenames write it. A membership not
+    yet given an index can neither send nor receive."""
+    if membership.bbs_index is None:
+        raise HTTPException(status_code=403,
+                            detail="This membership has no BBS index yet; ask the hub admin")
+    return format(membership.bbs_index, "02X")

@@ -54,7 +54,7 @@ def run(league: League, node: Node, command: str = "PLANETARY",
     script = (
         "import sys; sys.path.insert(0, '.');"
         "from pathlib import Path;"
-        "from rig import dosrun;"
+        "from sr_harness.run import run as dosrun;"
         "from rig.layout import DOSEMU_CONF;"
         f"t = Path({str(install)!r});"
         # REDATE.COM lives in the shared media dir, not in the fixture, so it is
@@ -69,7 +69,7 @@ def run(league: League, node: Node, command: str = "PLANETARY",
         # inuse.flg is the game's mutex. An uncleanly killed run leaves one behind
         # and every later run then exits 1 having printed nothing about why.
         "(t / 'inuse.flg').unlink(missing_ok=True);"
-        f"rc = dosrun.run(['/usr/bin/dosemu', '-f', str(DOSEMU_CONF), '-K', str(t),"
+        f"rc = dosrun(['/usr/bin/dosemu', '-f', str(DOSEMU_CONF), '-K', str(t),"
         f" '-E', 'RUN.BAT'], {str(log)!r}, timeout={timeout});"
         "(t / 'inuse.flg').unlink(missing_ok=True);"
         "print(rc)"

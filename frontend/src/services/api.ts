@@ -134,8 +134,8 @@ export const clientsApi = {
   delete: (id: number) =>
     api.delete(`/clients/${id}`),
 
-  regenerateSecret: (id: number) =>
-    api.post(`/clients/${id}/regenerate-secret`),
+  regenerateSecret: (id: number, overlapHours: number) =>
+    api.post(`/clients/${id}/regenerate-secret`, { overlap_hours: overlapHours }),
 
   addFtnAddress: (id: number, address: string) =>
     api.post(`/clients/${id}/ftn-addresses`, { address }),
@@ -156,6 +156,10 @@ export const clientsApi = {
 
   getClaimLink: (id: number) =>
     api.get(`/clients/${id}/claim-link`),
+
+  // A plain link, like the nodelist: the hub names the file. No secret in it.
+  sampleConfigUrl: (id: number, platform: 'linux' | 'windows') =>
+    `${api.defaults.baseURL}/clients/${id}/config/${platform}`,
 
   addOwner: (id: number, userId: number) =>
     api.post(`/clients/${id}/owners`, { user_id: userId }),
@@ -332,6 +336,128 @@ export const leaguesApi = {
     ftn_address_id?: number
   }) =>
     api.patch(`/leagues/${leagueId}/members/${membershipId}`, data)
+}
+
+// Game reset: the form (every setting the game's reset editor offers, with
+// its help) and the league's one draft. See backend/services/game_reset/.
+export type ResetValue = number | string | boolean | null
+
+export interface ResetField {
+  id: string
+  label: string
+  page: number
+  group: string
+  kind: 'number' | 'choice' | 'toggle' | 'date'
+  default: ResetValue
+  min: number | null
+  max: number | null
+  choices: { letter: string; name: string }[]
+  interbbs: boolean
+  advised_min: number | null // ours: below it the form warns but allows
+  advised_reason: string | null
+  note: string | null
+  admin_note: string | null
+  depends_on: [string, ResetValue] | null
+  help_title: string
+  help: string
+}
+
+export interface ResetDraft {
+  id: number
+  version: number
+  settings: Record<string, ResetValue>
+  warnings: { field: string; message: string }[]
+  notes: string | null
+  created_by: string | null
+  created_at: string | null
+  updated_by: string | null
+  updated_at: string | null
+}
+
+export interface GameResetForm {
+  league_id: number
+  full_id: string
+  game_type: string
+  fields: ResetField[]
+  defaults: Record<string, ResetValue>
+  draft: ResetDraft | null
+  last_applied: {
+    id: number
+    settings: Record<string, ResetValue>
+    applied_by: string | null
+    applied_at: string | null
+    game_start: string | null
+  } | null
+  observed: {
+    game_started_at: string | null
+    protection_turns: number | null
+    indiv_attacks: number | null
+    lost_attack_days: number | null
+    settings: Record<string, ResetValue> | null
+    seen_at: string | null
+  } | null
+  under_way: ResetDetail | null
+  hub_timezone: { name: string; utc_offset: string; today: string }
+}
+
+// One row of a league's reset history. `source` is 'observed' for a reset
+// only seen in a Game Start packet, not performed from the console.
+export interface ResetSummary {
+  id: number
+  status: 'applying' | 'applied' | 'failed'
+  source: 'console' | 'observed'
+  settings: Record<string, ResetValue>
+  notes: string | null
+  applied_by: string | null
+  applied_at: string | null
+  game_start: string | null
+  ended: string | null
+  error: string | null
+  confirmed: boolean | null
+  mismatches: string[]
+}
+
+export interface ResetDetail extends ResetSummary {
+  progress: { stage: string; at: string }[]
+  warnings: { field: string; message: string }[]
+  transcript: string | null
+  backup_path: string | null
+  processing_run_id: number | null
+  sent_config: Record<string, ResetValue | string[]> | null
+  members: {
+    bbs_index: string
+    bbs_name: string | null
+    filename: string
+    downloaded_at: string | null
+  }[]
+}
+
+export const gameResetApi = {
+  form: (leagueId: number) =>
+    api.get<GameResetForm>(`/leagues/${leagueId}/reset`),
+
+  // `version` is the draft version being edited; leave it out for a new draft.
+  // 409 means someone else saved in between; 422 lists each failing field.
+  saveDraft: (leagueId: number, body: {
+    settings: Record<string, ResetValue>
+    notes?: string | null
+    version?: number | null
+  }) =>
+    api.put<GameResetForm>(`/leagues/${leagueId}/reset/draft`, body),
+
+  discardDraft: (leagueId: number) =>
+    api.delete<GameResetForm>(`/leagues/${leagueId}/reset/draft`),
+
+  // `confirm` is the league code typed by hand. 202 with the reset under way;
+  // 409 when another is running or the draft changed, 422 when refused.
+  perform: (leagueId: number, body: { version: number; confirm: string }) =>
+    api.post<ResetDetail>(`/leagues/${leagueId}/reset/perform`, body),
+
+  history: (leagueId: number) =>
+    api.get<ResetSummary[]>(`/leagues/${leagueId}/resets`),
+
+  reset: (leagueId: number, resetId: number) =>
+    api.get<ResetDetail>(`/leagues/${leagueId}/resets/${resetId}`)
 }
 
 // Processing API functions
@@ -562,7 +688,7 @@ export const usersApi = {
   create: (data: { username: string; password: string; is_admin?: boolean }) =>
     api.post('/users', data),
 
-  update: (id: number, data: { username?: string; password?: string; is_admin?: boolean }) =>
+  update: (id: number, data: { username?: string; password?: string; is_admin?: boolean; is_active?: boolean }) =>
     api.put(`/users/${id}`, data),
 
   delete: (id: number) =>

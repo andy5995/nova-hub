@@ -17,12 +17,13 @@ through an admin's re-link link.
 """
 
 import re
-from datetime import datetime
+
 
 from fastapi import Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.models.database import RelinkLink, SysopUser
 from backend.services import audit, relink_links
 from backend.services.identity_provider import Identity
@@ -87,7 +88,7 @@ def sign_in(db: Session, identity: Identity, request: Request | None = None) -> 
                          detail=f"{user.email} -> {identity.email}", request=request)
             user.email = identity.email
 
-    user.last_login = datetime.utcnow()
+    user.last_login = utcnow()
     db.commit()
     db.refresh(user)
     return user
@@ -125,7 +126,7 @@ def link(db: Session, identity: Identity, relink: RelinkLink, ip: str,
     other = _by_email(db, identity.email)
     if other is None or other.id == user.id:
         user.email = identity.email
-    user.last_login = datetime.utcnow()
+    user.last_login = utcnow()
     audit.record(db, "account.linked", actor=user, target=user,
                  detail=f"signs in as {identity.email}"
                  + ("; replaced the previous sign-in" if replaced else ""),

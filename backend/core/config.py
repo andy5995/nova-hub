@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import toml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -71,6 +71,9 @@ class SecurityConfig(BaseModel):
     max_upload_size_bytes: int = 10 * 1024 * 1024  # 10 MB
     min_password_length: int = 12
     cookie_secure: bool = True
+    # Peers whose X-Forwarded-For / -Host / -Proto the hub believes: the reverse
+    # proxy in front of it. Anyone else could write those headers themselves.
+    trusted_proxies: list[str] = ["127.0.0.1", "::1"]
 
 
 class IdentityConfig(BaseModel):
@@ -137,8 +140,7 @@ class Config(BaseModel):
     # Raw config for accessing per-league dosemu settings
     _raw: Dict[str, Any] = {}
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Dictionary-style access for backwards compatibility"""

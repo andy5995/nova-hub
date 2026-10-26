@@ -5,7 +5,8 @@ Provides authentication and authorization for both Service API (OAuth2)
 and Management API (session-based JWT).
 """
 
-from datetime import datetime, timedelta
+import time
+from datetime import timedelta
 from typing import Optional
 
 import bcrypt
@@ -14,6 +15,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 
@@ -74,6 +76,11 @@ def validate_password(password: str) -> None:
         raise ValueError("Password must contain at least one lowercase letter.")
     if not any(c.isdigit() for c in password):
         raise ValueError("Password must contain at least one digit.")
+    # bcrypt reads at most 72 bytes and stops at a NUL; newer versions refuse both.
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 bytes.")
+    if "\x00" in password:
+        raise ValueError("Password must not contain a NUL character.")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -91,9 +98,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode = data.copy()
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings["access_token_expire_minutes"])
+        expire = utcnow() + timedelta(minutes=settings["access_token_expire_minutes"])
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings["secret_key"], algorithm=settings["algorithm"])
@@ -119,8 +126,26 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash using bcrypt"""
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    """Verify a password against its hash using bcrypt.
+
+    False, never an exception, for input bcrypt refuses (newer versions raise
+    on more than 72 bytes) or a stored value that isn't a bcrypt hash: either
+    way it is a failed sign-in, and must be counted as one.
+    """
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+# Checked against when there is no account to check, so a miss takes as long
+# as a wrong password and doesn't say which names exist.
+_DUMMY_HASH = bcrypt.hashpw(b"nova-hub timing pad", bcrypt.gensalt()).decode("utf-8")
+
+
+def burn_password_check(plain_password: str) -> None:
+    """Spend a bcrypt check's time on nothing."""
+    verify_password(plain_password, _DUMMY_HASH)
 
 
 def hash_password(password: str) -> str:
@@ -170,6 +195,11 @@ async def get_current_client(
     if client is None:
         raise credentials_exception
 
+    from backend.services.client_secrets import token_revoked
+
+    if token_revoked(client, payload.get("iat")):
+        raise credentials_exception
+
     if not client.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -195,13 +225,13 @@ def verify_client_credentials(client_id: str, client_secret: str, db: Session):
 
     client = db.query(Client).filter(Client.client_id == client_id).first()
 
-    if not client:
+    if not client or not client.is_active:
+        burn_password_check(client_secret)
         return None
 
-    if not client.is_active:
-        return None
+    from backend.services.client_secrets import matches
 
-    if not verify_password(client_secret, client.client_secret):
+    if not matches(client, client_secret):
         return None
 
     return client
@@ -283,6 +313,10 @@ async def get_current_user_optional(request: Request, db: Session = Depends(get_
     if payload is None:
         return None
 
+    # A service token is signed with the same key: only a session token counts here.
+    if payload.get("type") != "management":
+        return None
+
     username: str = payload.get("sub")
     if username is None:
         return None
@@ -331,7 +365,9 @@ def create_service_token(client_id: str) -> str:
     Returns:
         JWT token string with type="service"
     """
-    return create_access_token(data={"sub": client_id, "type": "service"})
+    # iat lets a secret rotation end the tokens issued before it.
+    return create_access_token(data={"sub": client_id, "type": "service",
+                                     "iat": time.time()})
 
 
 def create_session_token(username: str) -> str:

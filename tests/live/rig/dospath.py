@@ -6,25 +6,14 @@ game runs to completion, prints every phase marker, and ingests nothing at all.
 That is the R-3 failure mode, and the only cheap way to catch it is to look at
 the configured paths before trusting a run.
 
-Deliberately importable on its own with no rig setup, so it can be pointed at a
-production config.toml as well as at the rig.
+Deliberately importable with no rig setup -- it needs only sr-harness -- so it
+can be pointed at a production config.toml as well as at the rig.
 """
 from pathlib import Path
 
-
-def dos_path_problems(dos_path: str) -> list:
-    """Components of a DOS path that 16-bit code cannot traverse."""
-    problems = []
-    for part in str(dos_path).split("\\"):
-        if not part or part.endswith(":"):
-            continue
-        stem, _, ext = part.partition(".")
-        if len(stem) > 8 or len(ext) > 3:
-            problems.append(
-                f"path component {part!r} breaks DOS 8.3, so the game will "
-                f"silently ingest nothing from {dos_path!r}"
-            )
-    return problems
+# The path rule itself lives in sr-harness, which drives the games for the rig;
+# what is left here is the half that knows a hub config's shape.
+from sr_harness.dospath import bbs_cfg_inbound, dos_path_problems  # noqa: F401
 
 
 def config_problems(config: dict) -> list:
@@ -57,8 +46,3 @@ def config_problems(config: dict) -> list:
 
     return problems
 
-
-def bbs_cfg_inbound(install: Path) -> str:
-    """Line 4 of bbs.cfg: the DOS path the game reads packets from."""
-    lines = install.joinpath("bbs.cfg").read_bytes().decode("latin-1").split("\r\n")
-    return lines[3] if len(lines) > 3 else ""

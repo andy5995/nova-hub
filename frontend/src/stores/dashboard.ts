@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { dashboardApi } from '@/services/api'
+import { dashboardApi, apiError } from '@/services/api'
 
 export interface DashboardStats {
   total_packets: number
@@ -62,8 +62,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       activityChart.value = data.activity_chart
       leagueChart.value = data.league_chart
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load dashboard'
+      error.value = apiError(err, 'Failed to load dashboard')
     } finally {
       loading.value = false
     }
@@ -74,8 +73,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       const response = await dashboardApi.getStats()
       stats.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load stats'
+      error.value = apiError(err, 'Failed to load stats')
     }
   }
 
@@ -84,8 +82,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       const response = await dashboardApi.getActivity(limit)
       activity.value = response.data
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to load activity'
+      error.value = apiError(err, 'Failed to load activity')
     }
   }
 

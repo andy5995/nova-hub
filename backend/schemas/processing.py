@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProcessingRunResponse(BaseModel):
@@ -17,10 +17,12 @@ class ProcessingRunResponse(BaseModel):
     packets_unconsumed: int = 0
     status: str  # "running", "completed", "failed"
     error_message: Optional[str] = None
-    league_name: Optional[str] = None
+    leagues: List[str] = Field(
+        [], description="The leagues the run processed, e.g. ['015B', '015F']: those whose "
+                        "packets it moved or whose score and listing files it made")
+    league_name: Optional[str] = Field(None, description="The same leagues, comma-separated")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProcessingRunPacket(BaseModel):
@@ -35,12 +37,11 @@ class ProcessingRunFile(BaseModel):
     id: int
     filename: str
     file_type: str  # "score", "routes", "bbsinfo"
-    league_name: Optional[str] = None  # e.g. "B 555" — identifies source league
+    league_name: Optional[str] = None  # the league it came from, e.g. "555B"
     file_data: Optional[str] = None
     file_data_html: Optional[str] = None  # Converted ANSI to HTML
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProcessingRunDetail(BaseModel):
@@ -52,6 +53,7 @@ class ProcessingRunDetail(BaseModel):
     packets_processed: int = 0
     packets_unconsumed: int = 0
     status: str
+    leagues: List[str] = []
     league_name: Optional[str] = None
     error_message: Optional[str] = None
     dosemu_output: Optional[str] = None
@@ -61,5 +63,4 @@ class ProcessingRunDetail(BaseModel):
     routes_files: List[ProcessingRunFile] = []
     bbsinfo_files: List[ProcessingRunFile] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

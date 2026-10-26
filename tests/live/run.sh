@@ -43,13 +43,13 @@ if (( setup )); then
     "$PYTHON" -m pip install -r "$LIVE_DIR/requirements.txt"
 fi
 
-# pyte is what dosdrive reconstructs the screen with, and bre_agent is what
-# player.py asks for decisions. Neither is in nova-hub's own requirements: they
-# belong to the rig, and the rig venv is built once per machine, so a rebuilt or
-# fresh host is exactly where they go missing.
+# sr_harness drives the games (and brings pyte, its screen emulator), and
+# bre_agent is what player.py asks for decisions. Neither is in nova-hub's own
+# requirements: they belong to the rig, and the rig venv is built once per
+# machine, so a rebuilt or fresh host is exactly where they go missing.
 missing=$("$PYTHON" - <<'EOF'
 import importlib.util
-print(" ".join(m for m in ("pyte", "bre_agent")
+print(" ".join(m for m in ("sr_harness", "pyte", "bre_agent")
                 if importlib.util.find_spec(m) is None))
 EOF
 )
@@ -84,5 +84,13 @@ fi
 # pytest is run from /tmp: the repo is read-only to the node users and pytest
 # wants somewhere to write its cache.
 cd /tmp
+# "${args[@]}", not "${args[@]:-}". On an empty array the :- form expands to one
+# EMPTY STRING rather than to nothing, and pytest reads that as a second path to
+# collect -- which, from here, is /tmp. It then walked /tmp/pulse-* and
+# /tmp/systemd-private-*, set rootdir to /, and died with six PermissionError
+# collection errors before running a single test. Passing any argument at all,
+# even -q, hid it, so the plain no-argument invocation documented at the top of
+# this file was the only one that failed. ${args[@]} on an empty array expands
+# to nothing under set -u on bash 4.4+ (the rig is on 5.2).
 exec env NOVATEST_RIG=1 "$PYTHON" -m pytest "$REPO/tests/live" \
-    -p no:cacheprovider -W ignore::DeprecationWarning "${args[@]:-}"
+    -p no:cacheprovider -W ignore::DeprecationWarning "${args[@]}"

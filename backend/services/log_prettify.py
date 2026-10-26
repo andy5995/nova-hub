@@ -2,16 +2,24 @@
 
 import asyncio
 import tempfile
+import warnings
 from pathlib import Path
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 
 from backend.logging_config import get_logger
 
 logger = get_logger(context="log_prettify")
 
+# A month of transcripts converts in well under a second.
+CONVERT_TIMEOUT = 20
+
 
 async def strip_spans(html_string):
-    soup = BeautifulSoup(html_string, 'html.parser')
+    # Called a line at a time, and a line that is only a DOS path or a URL makes
+    # bs4 warn that it looks like a filename. It is always markup here.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", MarkupResemblesLocatorWarning)
+        soup = BeautifulSoup(html_string, 'html.parser')
 
     # Find all 'span' tags and unwrap them
     # Meaning keep the insides of the span tags but remove the tags themselves
@@ -53,9 +61,18 @@ async def ansi_to_html(log_ansi):
             "-preview",
             stdin=fp,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.PIPE,
         )
+        try:
+            stdout_data, stderr_data = await asyncio.wait_for(
+                process.communicate(), timeout=CONVERT_TIMEOUT)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise RuntimeError(f"terminal-to-html took over {CONVERT_TIMEOUT}s")
 
-        stdout_data, _ = await process.communicate()
-
+    # Its error text is not HTML; the caller falls back to escaping the input.
+    if process.returncode != 0:
+        raise RuntimeError(f"terminal-to-html exited {process.returncode}: "
+                           f"{stderr_data.decode(errors='replace')[:200]}")
     return stdout_data.decode()

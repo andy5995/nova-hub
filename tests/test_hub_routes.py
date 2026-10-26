@@ -13,11 +13,12 @@ Reproduced on the rig: 1,100 forced cycles rolled 999 -> 000 at cycle 1,002 and
 then reissued 900b0102.002 onward with fresh contents under names already used.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 
+from backend.core.clock import utcnow
 from backend.services.sequence_validator import SequenceValidator
 
 
@@ -32,7 +33,7 @@ class FakeDB:
         self._routes = routes
         self._sequences = sequences
         self.queried = []
-        self._clock = datetime.utcnow() - timedelta(days=1)
+        self._clock = utcnow() - timedelta(days=1)
 
     def execute(self, statement, params=None):
         if params is None:

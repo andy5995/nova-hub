@@ -86,7 +86,7 @@ async function handleTrigger() {
                 <td class="font-mono">#{{ run.id }}</td>
                 <td class="text-muted">{{ run.started_at }}</td>
                 <td class="font-mono">{{ run.duration || '-' }}</td>
-                <td>{{ run.league_name || '-' }}</td>
+                <td>{{ run.leagues.join(', ') || '-' }}</td>
                 <td>{{ run.packets_processed }}</td>
                 <td>
                   <span class="badge" :class="statusClass(run.status)">

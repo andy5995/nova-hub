@@ -1,7 +1,7 @@
 """Schemas for the item-movement view."""
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class Movement(BaseModel):
@@ -19,8 +19,7 @@ class Movement(BaseModel):
     size_after: Optional[int] = None
     phase: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TypeCount(BaseModel):

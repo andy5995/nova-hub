@@ -1,23 +1,24 @@
 """Service API packet operations"""
 
 import hashlib
-from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
 from backend.models.database import Client, League, LeagueMembership, Packet
-from backend.schemas.packets import PacketInfo, PacketListResponse, PacketUploadResponse
+from backend.schemas.packets import BINARY, PacketInfo, PacketListResponse, PacketUploadResponse
 from backend.services.games import LEAGUE_ID_REGEX, game_for_letter, nodelist_game
-from backend.services.league_utils import parse_league_id
+from backend.services.league_utils import board_hex, parse_league_id
 from backend.services.packet_service import parse_packet_filename
 from backend.services.processing_service import find_file_case_insensitive
 
@@ -25,8 +26,36 @@ logger = get_logger(context="service_packets")
 
 router = APIRouter()
 
+# How long an identical re-upload counts as a retry of the last one. A route's
+# numbering takes months to come back round to the same name; the same name and
+# the same bytes within a day is one packet sent twice.
+RETRY_WINDOW = timedelta(days=1)
 
-@router.put("/{filename}", response_model=PacketUploadResponse, summary="Upload Packet")
+
+async def _read_body(request: Request, max_size: int) -> bytes:
+    """The body, refused as soon as it passes max_size: before reading at all
+    when Content-Length says so, and while reading when it lies or is absent
+    (chunked), so no upload is ever held in memory past the limit."""
+    too_big = HTTPException(status_code=413,
+                            detail=f"Packet exceeds maximum allowed size of {max_size} bytes")
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared = int(content_length)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if declared > max_size:
+            raise too_big
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > max_size:
+            raise too_big
+    return bytes(body)
+
+
+@router.put("/{filename}", response_model=PacketUploadResponse, summary="Upload Packet",
+            openapi_extra={"requestBody": {"required": True, "content": BINARY}})
 async def upload_packet(
     league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     filename: str = PathParam(...),
@@ -91,25 +120,9 @@ async def upload_packet(
             detail=f"Game type mismatch: filename={packet_info['game_type']}, URL={league_game_type}",
         )
 
-    # Enforce upload size limit before reading body
-    content_length = request.headers.get("content-length")
-    max_size = get_config().security.max_upload_size_bytes
-    if content_length and int(content_length) > max_size:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Packet exceeds maximum allowed size of {max_size} bytes",
-        )
-
-    # Read raw request body
-    content = await request.body()
+    content = await _read_body(request, get_config().security.max_upload_size_bytes)
     if not content:
         raise HTTPException(status_code=400, detail="Empty request body")
-
-    if len(content) > max_size:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Packet exceeds maximum allowed size of {max_size} bytes",
-        )
 
     # Query league by BOTH league_id AND game_type
     league = (
@@ -121,18 +134,13 @@ async def upload_packet(
         .first()
     )
 
+    # Leagues are made in the console. Making one here, for any number a token
+    # holder names, only to refuse them as no member of it, left the row behind.
     if not league:
-        # Auto-create league
-        game_code = game_for_letter(league_game_type).code
-        league = League(
-            league_id=league_number,
-            game_type=league_game_type,
-            name=f"{game_code} League {league_number}",
-            is_active=True,
-        )
-        db.add(league)
-        db.commit()
-        db.refresh(league)
+        raise HTTPException(status_code=404, detail=f"League {league_id} not found")
+    if not league.is_active:
+        # Never processed while disabled, so it would only sit in inbound.
+        raise HTTPException(status_code=403, detail=f"League {league_id} is disabled")
 
     # Check client membership in this league
     membership = (
@@ -151,8 +159,7 @@ async def upload_packet(
             detail=f"Client {client.client_id} is not a member of league {league_id}",
         )
 
-    # Convert membership BBS index to hex for comparison
-    membership_bbs_hex = format(membership.bbs_index, "02X")
+    membership_bbs_hex = board_hex(membership)
 
     # Verify client is authorized for this source BBS
     if packet_info["source_bbs_index"].upper() != membership_bbs_hex:
@@ -163,6 +170,21 @@ async def upload_packet(
 
     # Calculate file hash
     file_hash = hashlib.sha256(content).hexdigest()
+
+    # A retry: the connection dropped after the hub had the packet but before
+    # the client heard. Writing it again would add a second row (and second
+    # sightings) and could rewrite the inbound file mid-run.
+    previous = (
+        db.query(Packet)
+        .filter(Packet.league_id == league.id, Packet.filename == normalized_filename)
+        .order_by(Packet.id.desc())
+        .first()
+    )
+    if (previous is not None and previous.checksum == file_hash
+            and previous.uploaded_at and previous.uploaded_at >= utcnow() - RETRY_WINDOW):
+        logger.info(f"{normalized_filename} from {client.client_id} is a retry of packet {previous.id}")
+        return PacketUploadResponse(status="received", filename=normalized_filename,
+                                    packet_id=previous.id)
 
     # Save file to inbound directory
     data_dir = get_config().get("server", {}).get("data_dir", "./data")
@@ -181,11 +203,12 @@ async def upload_packet(
         sequence_number=packet_info["sequence_number"],
         file_size=len(content),
         checksum=file_hash,
+        source_client_id=client.id,
     )
     db.add(packet)
     if client.first_upload_at is None:
         # The onboarding Verify step: this node is really exchanging packets
-        client.first_upload_at = datetime.utcnow()
+        client.first_upload_at = utcnow()
     db.commit()
 
     # Best-effort: an attack that cannot be traced must not fail the upload.
@@ -255,7 +278,10 @@ async def list_packets(
         return PacketListResponse(packets=[])
 
     # Build list of (league_id, bbs_hex) tuples for filtering
-    bbs_filters = [(m.league_id, format(m.bbs_index, "02X")) for m in memberships]
+    bbs_filters = [(m.league_id, format(m.bbs_index, "02X"))
+                   for m in memberships if m.bbs_index is not None]
+    if not bbs_filters:
+        return PacketListResponse(packets=[])
 
     # Query packets
     filters = [
@@ -290,7 +316,8 @@ async def list_packets(
     return PacketListResponse(packets=packet_list)
 
 
-@router.get("/{filename}", summary="Download Packet")
+@router.get("/{filename}", summary="Download Packet", response_class=Response,
+            responses={200: {"description": "The packet", "content": BINARY}})
 async def download_packet(
     league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     filename: str = PathParam(...),
@@ -377,7 +404,7 @@ async def _download_nodelist(
         raise HTTPException(status_code=404, detail="Nodelist file not found")
 
     # Mark as downloaded
-    dest_bbs_hex = f"{membership.bbs_index:02X}"
+    dest_bbs_hex = board_hex(membership)
     nodelist_packet = (
         db.query(Packet)
         .filter(
@@ -389,7 +416,7 @@ async def _download_nodelist(
     )
 
     if nodelist_packet:
-        nodelist_packet.downloaded_at = datetime.now()
+        nodelist_packet.downloaded_at = utcnow()
         nodelist_packet.is_downloaded = True
         db.commit()
 
@@ -419,10 +446,18 @@ async def _download_packet(
     if packet_info["game_type"] != league_game_type:
         raise HTTPException(status_code=400, detail="Game type mismatch")
 
+    league = (
+        db.query(League)
+        .filter(League.league_id == league_number, League.game_type == league_game_type)
+        .first()
+    )
+    if not league:
+        raise HTTPException(status_code=404, detail="Packet not found")
+
     # Get packet (prioritize undownloaded, newest first)
     packet = (
         db.query(Packet)
-        .filter(Packet.filename == filename)
+        .filter(Packet.league_id == league.id, Packet.filename == filename)
         .order_by(Packet.is_downloaded.asc(), Packet.uploaded_at.desc())
         .first()
     )
@@ -445,7 +480,7 @@ async def _download_packet(
         raise HTTPException(status_code=403, detail="Client is not a member of this league")
 
     # Verify destination
-    membership_bbs_hex = format(membership.bbs_index, "02X")
+    membership_bbs_hex = board_hex(membership)
     if packet_info["dest_bbs_index"].upper() != membership_bbs_hex:
         raise HTTPException(
             status_code=403,
@@ -460,7 +495,7 @@ async def _download_packet(
         raise HTTPException(status_code=404, detail="Packet file not found")
 
     # Mark as downloaded
-    packet.downloaded_at = datetime.now()
+    packet.downloaded_at = utcnow()
     packet.is_downloaded = True
     db.commit()
 

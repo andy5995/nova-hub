@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.logging_config import get_logger
 from backend.models.database import (
     AttackSighting, League, LeagueGameSettings, Packet, TrafficSighting,
@@ -41,10 +42,33 @@ logger = get_logger(context="attack_trace")
 
 DEFAULT_LOST_ATTACK_DAYS = 7    # BRE's default, used until a Configupdate is seen
 NODELIST_PREFIXES = ("BRNODES.", "FENODES.")   # stored as packets, but text
+# Only the League Coordinator -- the hub's game -- sends these.
+HUB_ONLY_TYPES = (bre_packet.CONFIG_UPDATE, bre_packet.GAME_START)
+
+
+def from_hub(packet: Packet) -> bool:
+    """Whether the hub's own game wrote this packet. An upload's source index
+    is checked against the uploader's membership, and no member holds the
+    hub's, so the filename can be believed."""
+    from backend.core.config import get_config
+    return packet.source_bbs_index.upper() == get_config().hub.bbs_index.upper()
+
+
+def trusted(rec: bre_packet.Record, packet: Packet, hub: bool) -> bool:
+    """Whether a record is one this packet's sender could have written.
+
+    The hub relays other boards' records, so from the hub any source goes. A
+    member only ever sends its own (every BRE upload on dev, Oct 2026), and
+    never the coordinator's settings or Game Start: either would let a member
+    rewrite what the console shows of the league, or confirm a reset.
+    """
+    if hub:
+        return True
+    return rec.type not in HUB_ONLY_TYPES and rec.src == int(packet.source_bbs_index, 16)
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return utcnow()
 
 
 # ── recording ─────────────────────────────────────────────────────────────
@@ -66,11 +90,15 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
     db.query(AttackSighting).filter(AttackSighting.packet_id == packet.id).delete()
     db.query(TrafficSighting).filter(TrafficSighting.packet_id == packet.id).delete()
 
-    added = 0
+    added, hub = 0, from_hub(packet)
     for rec in records:
         if not rec.crc_ok:
             # A damaged record decodes to garbage; recording a garbage ID would
             # invent an attack that never happened.
+            continue
+        if not trusted(rec, packet, hub):
+            logger.warning(f"{packet.filename}: ignoring a {rec.name} from {rec.src} "
+                           f"that its sender could not have written")
             continue
         if rec.type in (bre_packet.INDIV_ATTACK, bre_packet.ATTACK_RESULT):
             a = bre_packet.attack(rec)
@@ -84,6 +112,10 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
             added += 1
         elif rec.type == bre_packet.CONFIG_UPDATE:
             _remember_settings(db, league, packet, bre_packet.league_settings(rec))
+        elif rec.type == bre_packet.GAME_START:
+            # A league-wide reset going out: the league's reset history.
+            from backend.services.game_reset.history import record_game_start
+            record_game_start(db, league, packet, bre_packet.league_settings(rec))
         elif rec.type in bre_packet.TRAFFIC_TYPES:
             t = bre_packet.traffic(rec)
             if t is None:
@@ -117,7 +149,8 @@ def record_safely(db: Session, packet: Packet, content: bytes) -> int:
 
 
 def _remember_settings(db, league, packet, s: bre_packet.LeagueSettings):
-    seen = packet.uploaded_at or datetime.utcnow()
+    # A Configupdate comes from the hub's game; see history.record_game_start.
+    seen = packet.processed_at or packet.uploaded_at or utcnow()
     row = db.get(LeagueGameSettings, league.id)
     if row is not None and row.seen_at and row.seen_at > seen:
         return      # an older packet being backfilled; keep the newer settings
@@ -128,6 +161,7 @@ def _remember_settings(db, league, packet, s: bre_packet.LeagueSettings):
     row.protection_turns = s.protection_turns
     row.indiv_attacks_per_day = s.indiv_attacks_per_day
     row.lost_attack_days = s.lost_attack_days
+    row.settings = s.settings or None
     row.packet_id = packet.id
     row.seen_at = seen
 
@@ -248,9 +282,11 @@ def stored_records(packets: List[Packet], data_dir: Optional[Path]):
             if packet.checksum and hashlib.sha256(content).hexdigest() != packet.checksum:
                 continue
             try:
-                yield from bre_packet.parse(content)
+                records = bre_packet.parse(content)
             except bre_packet.PacketFormatError:
                 continue
+            # A damaged record decodes to garbage, which a reveal would show as fact.
+            yield from (r for r in records if r.crc_ok)
             break
 
 

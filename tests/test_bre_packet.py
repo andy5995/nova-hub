@@ -6,6 +6,7 @@ Node 2's realm "Raider Two" (A) attacked node 1's "Hub Target" (A) three times -
 node 2 had declared them Missing In Transit, then delivered late; the game
 discarded them. The fixtures are those packets, byte for byte.
 """
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -175,3 +176,35 @@ def test_the_trade_deal_and_its_report_have_their_games_names():
     names = {r.name for name in ("trade_901b0201.017", "trade_report_901b0102.014")
              for r in bp.parse(load(name))}
     assert {"Trade Deal", "Report"} <= names
+
+
+# ── the whole Configupdate ────────────────────────────────────────────────
+CAPTURES = json.loads((Path(__file__).parent / "fixtures" / "bre_configupdates.json").read_text())
+
+
+@pytest.mark.parametrize("name", [k for k in CAPTURES if not k.startswith("_")])
+def test_a_game_start_decodes_to_the_settings_its_reset_was_performed_with(name):
+    capture = CAPTURES[name]
+    rec = bp.Record(bp.GAME_START, 1, 2, True, bytes.fromhex(capture["game_start"]))
+    s = bp.league_settings(rec)
+    wanted = dict(capture["settings"])
+    start = wanted.pop("start_date")
+    assert s.settings == wanted
+    if start:
+        # A typed start date starts the game at midnight.
+        assert s.game_started_at == datetime.fromisoformat(start)
+
+
+def test_every_reset_setting_but_the_start_date_is_decoded():
+    from backend.services.game_reset.fields import fields_for
+    rec = bp.Record(bp.GAME_START, 1, 2, True, bytes.fromhex(CAPTURES["a"]["game_start"]))
+    assert set(bp.league_settings(rec).settings) == {
+        f.id for f in fields_for("B")} - {"start_date"}
+
+
+def test_a_value_the_map_does_not_know_is_left_out():
+    raw = bytearray.fromhex(CAPTURES["defaults"]["game_start"])
+    raw[45] = 9           # Maintenance Costs: not M, N, L or H
+    raw[82] = 99          # Sabre: none of 0-2 or 200-210
+    s = bp.league_settings(bp.Record(bp.GAME_START, 1, 2, True, bytes(raw)))
+    assert "maintenance_costs" not in s.settings and "sabre" not in s.settings

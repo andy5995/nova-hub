@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api.management import management_router
@@ -51,30 +51,18 @@ async def lifespan(app: FastAPI):
     # Note: Run migrations manually with: alembic upgrade head
     # Automatic migrations disabled to prevent startup hangs
 
-    # Start packet watcher for hub-generated outbound packets
-    from backend.services.packet_service import PacketService
-    from backend.services.packet_watcher import WatcherService
-    import asyncio
-
-    db_session = get_session()
-    watcher = None
+    # A game reset can't survive a restart: settle any left half-done, putting
+    # the game back if the hub stopped with its editor open.
+    from backend.services.game_reset.perform import recover
+    recovery_db = get_session()
     try:
-        # Get the current event loop
-        loop = asyncio.get_running_loop()
-
-        packet_service = PacketService(db_session)
-        watcher = WatcherService(packet_service, config._raw, loop)
-        watcher.start()
-        app.state.watcher = watcher
-
-        # Process any existing files in watched directories
-        # (files that were there before the watcher started)
-        await watcher.process_pending_scans()
-
+        recover(recovery_db, config._raw)
     except Exception as e:
-        logger.exception(f"Failed to start packet watcher: {e}")
+        logger.exception(f"Could not settle interrupted game resets: {e}")
     finally:
-        db_session.close()
+        recovery_db.close()
+
+    import asyncio
 
     # Honour [processing] retention_days. Runs once at startup and daily after,
     # so a hub that is restarted often still prunes exactly once per day's worth
@@ -87,9 +75,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    if hasattr(app.state, "watcher") and app.state.watcher:
-        app.state.watcher.stop()
-
     task = getattr(app.state, "retention_task", None)
     if task is not None:
         task.cancel()
@@ -284,11 +269,14 @@ async def health_check():
         db.execute(text("SELECT 1"))
         db_status = "healthy"
     except Exception as e:
-        db_status = f"unhealthy: {str(e)}"
+        # Logged, not returned: this endpoint needs no login, and a database
+        # error can name paths and tables.
+        get_logger(context="health").exception(f"Health check: database failed: {e}")
+        db_status = "unhealthy"
     finally:
         db.close()
 
-    return {
+    body = {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "database": db_status,
         "version": app.version,
@@ -297,6 +285,8 @@ async def health_check():
             "management": "/management/docs",
         },
     }
+    # 503, so a monitor that only reads the status code sees it.
+    return body if db_status == "healthy" else JSONResponse(body, status_code=503)
 
 
 # API overview endpoint

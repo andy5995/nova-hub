@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import require_admin
@@ -57,7 +58,7 @@ async def list_attacks(
       rollover seen yet), `overdue` (past the due date, no result delivered), or `any`
     """
     hub_index = get_config().get("hub", {}).get("bbs_index", "01")
-    since = None if attack_id else datetime.utcnow() - timedelta(days=days)
+    since = None if attack_id else utcnow() - timedelta(days=days)
     found = attack_trace.journeys(db, hub_index, league_id=league_id, since=since,
                                   planet=planet, attack_id=attack_id, limit=2000)
     if stage:
@@ -115,7 +116,10 @@ async def reveal_forces(
     reveal is logged.
     """
     data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
-    f = attack_trace.forces(db, attack_id, data_dir)
+    try:
+        f = attack_trace.forces(db, attack_id, data_dir)
+    except bre_packet.PacketFormatError as exc:
+        raise HTTPException(status_code=422, detail=f"The stored attack can't be read: {exc}")
     if f is None:
         raise HTTPException(status_code=404, detail="No stored packet holds this attack")
     logger.info(f"Attack {attack_id.lower()} forces revealed to {current_user.username}")

@@ -28,9 +28,23 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
+        # Exactly what uv.lock says, dev group included (pytest, sr-harness).
+        # --locked fails if pyproject.toml changed without re-locking. uv is
+        # pinned so a new release cannot change how the lock is read.
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install uv==0.9.22
+          uv sync --locked --python 3.12
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: requirements.txt is the lock's export
+        # The deploy playbook installs from requirements.txt, so it must be
+        # exactly what was tested here.
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements.txt
+          git diff --exit-code requirements.txt || {
+            echo "requirements.txt is stale: run the uv export above and commit it." >&2
+            exit 1
+          }
 
       - name: Unit and integration tests
         # Run the unit tree on its own FIRST, with the live tree not even

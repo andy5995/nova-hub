@@ -5,6 +5,7 @@ import { useProcessingStore } from '@/stores/processing'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import { movementsApi, type Movement } from '@/services/api'
+import type { ProcessingRunFile } from '@/stores/processing'
 
 const route = useRoute()
 const processingStore = useProcessingStore()
@@ -56,6 +57,17 @@ function statusClass(status: string): string {
   }
 }
 
+// A run's files, a section per league in league order.
+function byLeague(files: ProcessingRunFile[]) {
+  const groups = new Map<string, ProcessingRunFile[]>()
+  for (const f of files) {
+    const league = f.league_name ?? 'Unknown league'
+    if (!groups.has(league)) groups.set(league, [])
+    groups.get(league)!.push(f)
+  }
+  return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([league, files]) => ({ league, files }))
+}
+
 function selectFile(id: number) {
   selectedFile.value = selectedFile.value === id ? null : id
 }
@@ -99,7 +111,7 @@ function getSelectedFileContent() {
             </div>
             <h1>Processing Run #{{ processingStore.currentRun.id }}</h1>
             <p class="text-muted">
-              {{ processingStore.currentRun.league_name || 'All Leagues' }}
+              {{ processingStore.currentRun.leagues.join(', ') || 'No league' }}
             </p>
           </div>
           <span class="badge badge-lg" :class="statusClass(processingStore.currentRun.status)">
@@ -159,7 +171,7 @@ function getSelectedFileContent() {
           <div v-for="group in movementsByPair" :key="`${group.src}-${group.dst}`" class="card moved-group">
             <div class="card-header">
               <h3 class="font-mono">
-                Node {{ group.src }} &rarr; Node {{ group.dst }}
+                Node {{ group.src ?? '?' }} &rarr; Node {{ group.dst ?? '?' }}
                 <span class="text-muted">({{ group.items.length }})</span>
               </h3>
             </div>
@@ -282,16 +294,21 @@ function getSelectedFileContent() {
 
         <!-- Scores Tab -->
         <div v-if="activeTab === 'scores'" class="tab-content">
-          <div class="files-grid">
-            <div
-              v-for="file in processingStore.currentRun.score_files"
-              :key="file.id"
-              class="card file-card"
-              :class="{ 'file-card-selected': selectedFile === file.id }"
-              @click="selectFile(file.id)"
-            >
-              <div class="card-header">
-                <h4 class="font-mono">{{ file.filename }}</h4>
+          <!-- One section per league: a run takes every league with work, and
+               each game writes files of the same names. -->
+          <div v-for="group in byLeague(processingStore.currentRun.score_files)" :key="group.league" class="mb-4">
+            <h3 class="section-title">{{ group.league }}</h3>
+            <div class="files-grid">
+              <div
+                v-for="file in group.files"
+                :key="file.id"
+                class="card file-card"
+                :class="{ 'file-card-selected': selectedFile === file.id }"
+                @click="selectFile(file.id)"
+              >
+                <div class="card-header">
+                  <h4 class="font-mono">{{ file.filename }}</h4>
+                </div>
               </div>
             </div>
           </div>
@@ -299,7 +316,7 @@ function getSelectedFileContent() {
           <!-- Selected Score File Preview -->
           <div v-if="selectedFile && getSelectedFileContent()" class="card mt-4">
             <div class="card-header">
-              <h3>{{ getSelectedFileContent()?.filename }}</h3>
+              <h3>{{ getSelectedFileContent()?.league_name }} {{ getSelectedFileContent()?.filename }}</h3>
             </div>
             <div class="card-body">
               <div
@@ -317,30 +334,15 @@ function getSelectedFileContent() {
 
         <!-- Other Files Tab -->
         <div v-if="activeTab === 'files'" class="tab-content">
-          <!-- Routes Files -->
-          <div v-if="processingStore.currentRun.routes_files.length > 0" class="mb-4">
-            <h3 class="section-title">Routes Files</h3>
+          <div
+            v-for="group in byLeague([...processingStore.currentRun.routes_files, ...processingStore.currentRun.bbsinfo_files])"
+            :key="group.league"
+            class="mb-4"
+          >
+            <h3 class="section-title">{{ group.league }}</h3>
             <div class="files-grid">
               <div
-                v-for="file in processingStore.currentRun.routes_files"
-                :key="file.id"
-                class="card file-card"
-                :class="{ 'file-card-selected': selectedFile === file.id }"
-                @click="selectFile(file.id)"
-              >
-                <div class="card-header">
-                  <h4 class="font-mono">{{ file.filename }}</h4>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- BBS Info Files -->
-          <div v-if="processingStore.currentRun.bbsinfo_files.length > 0">
-            <h3 class="section-title">BBS Info Files</h3>
-            <div class="files-grid">
-              <div
-                v-for="file in processingStore.currentRun.bbsinfo_files"
+                v-for="file in group.files"
                 :key="file.id"
                 class="card file-card"
                 :class="{ 'file-card-selected': selectedFile === file.id }"
@@ -356,7 +358,7 @@ function getSelectedFileContent() {
           <!-- Selected File Preview -->
           <div v-if="selectedFile && getSelectedFileContent()" class="card mt-4">
             <div class="card-header">
-              <h3>{{ getSelectedFileContent()?.filename }}</h3>
+              <h3>{{ getSelectedFileContent()?.league_name }} {{ getSelectedFileContent()?.filename }}</h3>
             </div>
             <div class="card-body">
               <pre class="file-output">{{ getSelectedFileContent()?.file_data }}</pre>

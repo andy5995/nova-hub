@@ -167,7 +167,7 @@ class TestRunStatus:
     ):
         service, _, _, _ = rig
 
-        async def fake_group(game_type, packets, run_id):
+        async def fake_group(game_type, packets, run_id, league_number=None):
             return {"status": "error", "error": "dosemu exited 1"}
 
         monkeypatch.setattr(service, "process_game_batch", fake_group)
@@ -188,7 +188,7 @@ class TestRunStatus:
     ):
         service, packet, _, _ = rig
 
-        async def fake_group(game_type, packets, run_id):
+        async def fake_group(game_type, packets, run_id, league_number=None):
             for p in packets:
                 p.processed_at = datetime.now()
             return {"status": "success", "output": "transcript"}
@@ -228,7 +228,7 @@ class TestRunStatus:
         )
         db_session.commit()
 
-        async def fake_group(game_type, packets, run_id):
+        async def fake_group(game_type, packets, run_id, league_number=None):
             lg = db_session.query(League).filter(
                 League.id == packets[0].league_id
             ).first()
@@ -246,6 +246,32 @@ class TestRunStatus:
         run = db_session.query(ProcessingRun).one()
         assert run.status == "failed"
         assert run.packets_processed == 1  # the healthy league still got through
+
+
+    @pytest.mark.asyncio
+    async def test_a_named_league_runs_with_no_packets_waiting(
+        self, rig, db_session, monkeypatch
+    ):
+        """A game reset's first PLANETARY: nothing has arrived, but the game
+        has to run to send the league its Game Start."""
+        service, packet, _, _ = rig
+        packet.processed_at = datetime.now()
+        db_session.commit()
+        calls = []
+
+        async def fake_group(game_type, packets, run_id, league_number=None):
+            calls.append((game_type, list(packets), league_number))
+            return {"status": "success", "output": ""}
+
+        monkeypatch.setattr(service, "process_game_batch", fake_group)
+        monkeypatch.setattr(service, "scan_outbound_folders", _noop)
+
+        assert await service.process_batch() is None      # nothing to do
+        run = await service.process_batch(also=(("BRE", "900"),))
+
+        assert calls == [("BRE", [], "900")]
+        assert run is not None and run.status == "completed"
+        assert run.packets_processed == 0
 
 
 async def _noop(*args, **kwargs):

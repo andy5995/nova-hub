@@ -32,8 +32,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from backend.core.security import get_password_hash
+from backend.core.clock import utcnow
 from backend.models.database import ClaimLink, Client, LeagueMembership, SysopUser
+from backend.services import client_secrets
 from backend.services.games import game_for_letter
 
 LINK_TTL = timedelta(hours=72)
@@ -47,7 +48,7 @@ def hash_token(token: str) -> str:
 
 def state(link: ClaimLink, now: datetime | None = None) -> str:
     """ready, used, superseded or expired -- in that order of precedence."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     if link.used_at:
         return USED
     if link.superseded_at:
@@ -64,7 +65,7 @@ def issue(db: Session, client: Client, issued_by: str, user: SysopUser | None = 
     Returns (token, link, how many it superseded). The token is returned once,
     here; only its hash is kept. Commits unless told not to.
     """
-    now = datetime.utcnow()
+    now = utcnow()
     superseded = db.execute(
         update(ClaimLink)
         .where(
@@ -96,7 +97,7 @@ def issue(db: Session, client: Client, issued_by: str, user: SysopUser | None = 
 
 def ready_for(db: Session, client_id: int, user: SysopUser) -> ClaimLink | None:
     """A link for this BBS that is bound to this user and still claimable."""
-    now = datetime.utcnow()
+    now = utcnow()
     return (
         db.query(ClaimLink)
         .filter(
@@ -136,7 +137,7 @@ def claim(db: Session, link: ClaimLink, ip: str) -> str:
     the mark are one conditional UPDATE, so two simultaneous claims cannot both
     succeed: SQLite serialises the writes and the second matches no row.
     """
-    now = datetime.utcnow()
+    now = utcnow()
     marked = db.execute(
         update(ClaimLink)
         .where(
@@ -151,9 +152,8 @@ def claim(db: Session, link: ClaimLink, ip: str) -> str:
         db.rollback()
         raise NotClaimable(link.id)
 
-    secret = Client.generate_client_secret()
     client = db.get(Client, link.client_id)
-    client.client_secret = get_password_hash(secret)
+    secret = client_secrets.rotate(client)
     db.commit()
     db.refresh(link)
     return secret
@@ -197,29 +197,64 @@ PLACEHOLDER_NOTE = (
     "The connection test needs none of them."
 )
 
+# A sample config downloaded later has no secret to put in it: the hub keeps
+# only its hash. The client_id is still filled in.
+SECRET_PLACEHOLDER = "CHANGE-ME"
+NO_SECRET_NOTE = (
+    "This sample has no client secret: the hub does not keep it. Put in the one "
+    "you saved when you claimed your credentials, or ask the hub admin for a new "
+    "claim link. Until then even the connection test fails."
+)
+
 
 def _toml_str(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    """A TOML basic string. Control characters are escaped: TOML refuses them raw."""
+    out = []
+    for ch in value:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+def _comment_text(value: str) -> str:
+    """Text safe inside a config file's comment: one line, and nothing that closes a <# #> block."""
+    return "".join(" " if ord(ch) < 0x20 or ord(ch) == 0x7F else ch for ch in value).replace("#>", "# >")
 
 
 def _psd1_str(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+    # PowerShell also ends a single-quoted string at the typographic quotes.
+    for q in ("'", "\u2018", "\u2019", "\u201a", "\u201b"):
+        value = value.replace(q, q + q)
+    return "'" + value + "'"
 
 
-def render_config_toml(client: Client, secret: str, hub_url: str, leagues: list[LeagueEntry]) -> str:
-    """config.toml for the Python client on Linux, under dosemu."""
+def render_config_toml(client: Client, secret: str | None, hub_url: str, leagues: list[LeagueEntry]) -> str:
+    """config.toml for the Python client on Linux, under dosemu.
+
+    With no secret it is a sample: the secret is a placeholder and says so.
+    """
     lines = [
-        f"# Nova Client configuration for {client.bbs_name}, issued by the hub.",
+        f"# Nova Client configuration for {_comment_text(client.bbs_name)}, issued by the hub.",
         "#",
         "# This file holds your client secret. Keep it readable only by the user",
         "# that runs the client (chmod 600 config.toml).",
         "#",
         f"# {PLACEHOLDER_NOTE}",
+    ]
+    if secret is None:
+        lines += ["#", f"# {NO_SECRET_NOTE}"]
+    lines += [
         "",
         "[hub]",
         f"url = {_toml_str(hub_url)}",
         f"client_id = {_toml_str(client.client_id)}",
-        f"client_secret = {_toml_str(secret)}",
+        f"client_secret = {_toml_str(secret or SECRET_PLACEHOLDER)}",
         "",
         "[bbs]",
         "# Must match the name recorded against your BBS index in each game's nodes file.",
@@ -265,22 +300,26 @@ def render_config_toml(client: Client, secret: str, hub_url: str, leagues: list[
     return "\n".join(lines) + "\n"
 
 
-def render_config_psd1(client: Client, secret: str, hub_url: str, leagues: list[LeagueEntry]) -> str:
-    """config.psd1 for the PowerShell client on Windows."""
+def render_config_psd1(client: Client, secret: str | None, hub_url: str, leagues: list[LeagueEntry]) -> str:
+    """config.psd1 for the PowerShell client on Windows. No secret: a sample, as above."""
     lines = [
         "<#",
-        f"    Nova Client configuration for {client.bbs_name}, issued by the hub.",
+        f"    Nova Client configuration for {_comment_text(client.bbs_name)}, issued by the hub.",
         "",
         "    This file holds your client secret. Keep it where only the account",
         "    that runs the client can read it.",
         "",
         f"    {PLACEHOLDER_NOTE}",
+    ]
+    if secret is None:
+        lines += ["", f"    {NO_SECRET_NOTE}"]
+    lines += [
         "#>",
         "@{",
         "    Hub = @{",
         f"        Url          = {_psd1_str(hub_url)}",
         f"        ClientId     = {_psd1_str(client.client_id)}",
-        f"        ClientSecret = {_psd1_str(secret)}",
+        f"        ClientSecret = {_psd1_str(secret or SECRET_PLACEHOLDER)}",
         "    }",
         "",
         "    Bbs = @{",

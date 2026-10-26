@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.core.clock import utcnow
 from backend.core.database import get_db
 from backend.core.security import require_admin
 from backend.logging_config import get_logger
@@ -36,7 +37,7 @@ MAX_WINDOW_DAYS = 365
 
 
 def _window(days: int) -> datetime:
-    return datetime.utcnow() - timedelta(days=days)
+    return utcnow() - timedelta(days=days)
 
 
 def _filtered(db: Session, days, league_id, direction, item_type, node, run_id=None):

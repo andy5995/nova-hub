@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { systemApi } from '@/services/api'
 
-const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
@@ -73,7 +72,9 @@ function isActive(path: string): boolean {
 
 async function handleLogout() {
   await authStore.logout()
-  router.push('/login')
+  // A full load, not router.push: every store still holds what this session
+  // saw, and the next person to sign in on this tab may see less.
+  window.location.assign('/login')
 }
 
 function toggleSidebar() {
@@ -339,10 +340,13 @@ function toggleSidebar() {
   display: none;
 }
 
+/* The window scrolls, not this (see .sidebar): an overflow here would make
+   it the scroll container for anything sticky inside a page, which then never
+   sticks. min-width lets it shrink beside the sidebar rather than widen. */
 .main-content {
   flex: 1;
+  min-width: 0;
   padding: 1.5rem;
-  overflow-y: auto;
   background-color: var(--color-bg);
 }
 </style>

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # --- Service API (OAuth2) ---
@@ -11,6 +11,7 @@ class TokenResponse(BaseModel):
     """OAuth2 token response"""
     access_token: str
     token_type: str = "bearer"
+    expires_in: int     # seconds
 
 
 class ClientVerifyResponse(BaseModel):
@@ -39,6 +40,7 @@ class UserResponse(BaseModel):
     id: int
     username: str
     is_admin: bool = False
+    is_active: bool = True  # False: disabled by an admin, can't sign in
     email: Optional[str] = None
     full_name: Optional[str] = None
     has_password: bool = False  # can use the local login
@@ -47,8 +49,7 @@ class UserResponse(BaseModel):
     created_at: Optional[str] = None
     last_login: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuthMethods(BaseModel):
@@ -81,3 +82,4 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     is_admin: Optional[bool] = None
+    is_active: Optional[bool] = None  # False disables the account without deleting it

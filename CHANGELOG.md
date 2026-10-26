@@ -4,6 +4,301 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **A member can no longer speak for the coordinator.** League settings and
+  the reset history came from any uploaded packet's Configupdate or Game
+  Start, so a member could rewrite what the hub shows of a league. Those two
+  records are now believed only from the hub's own packets (source = the
+  hub's index), and any other record only when its sender is the board that
+  uploaded it. The hub relays other boards' records, so its own packets are
+  exempt. Refused records are logged and skipped; the packet still routes. (#88)
+- **The BRE parser has size limits.** A record may decompress to 16 KB and a
+  packet to 1 MB; past that the packet is undecodable, as a bad one already
+  was. The largest real record is 2.7 KB. Before, a 60 KB upload could expand
+  to gigabytes in memory, even with a bad CRC. (#88)
+- Damaged numbers and dates in a record (a short Real, a date past year
+  9999, a loss that isn't a fraction) read as unknown or undecodable rather
+  than raising. A reveal of a damaged record gives 422, not 500, and reveals
+  read only records whose CRC checks. (#88)
+- **A service token is no longer a session.** Both are signed with the same
+  key, and the claim page's optional sign-in didn't check which kind it had,
+  so a BBS whose client ID matched a sysop's username could act as that sysop
+  there. (#87)
+- **X-Forwarded-For/-Host/-Proto are believed only from the reverse proxy**
+  (`[security] trusted_proxies`, default the loopback addresses), and the
+  address used is the one the proxy appended. Before, any client could pick
+  the address the rate limiter, the audit log and claim links saw. Behind
+  Caddy as deployed this wasn't reachable; on a hub serving directly it was.
+  The limiter also forgets addresses that went quiet. (#87)
+- **Sign-in redirects stay on the hub** even when the path hides a tab or
+  newline, which browsers drop to make `//elsewhere`. (#87)
+- A transcript or score file that can't be converted to HTML is shown
+  escaped, not as raw HTML; the converter's failures and hangs (20s) now count
+  as failures. (#87)
+- A join application is refused if a field holds a newline or control
+  character: approval copies them into nodes.dat. Config files the hub writes
+  escape control characters, and a BBS name can't close the PowerShell
+  file's comment or its quotes (including typographic ones). (#87)
+- An unknown BBS or username takes as long to refuse as a wrong secret, and
+  input bcrypt refuses counts as a failed attempt rather than an error. (#87)
+
+### Added
+- **Disable an account** without deleting it (Admin > Users > Edit). A
+  disabled account can't sign in by either route, and its session stops
+  working. Password sign-in now records the last sign-in, as the provider
+  route did. (#87)
+- **The token endpoint speaks more OAuth2.** The response carries
+  `expires_in` (seconds) and `Cache-Control: no-store`, and a client may send
+  its id and secret as HTTP Basic instead of in the form (RFC 6749 2.3.1),
+  as stock OAuth2 libraries do. Sending both, or neither, is a 400; it was a
+  422 for neither. (#89)
+- The Service API spec says what its binary endpoints carry: an
+  `application/octet-stream` body on upload, bytes from a packet or
+  nodelist download, and the nodelist's 304 and conditional headers. (#89)
+- League ids in Service API paths may use a lowercase game letter (`555b`). (#89)
+
+### Changed
+- **The database enforces its references.** SQLite ignores foreign keys
+  unless asked on every connection, so every reference and `ON DELETE` in the
+  schema was decoration. The hub's engine now turns them on, runs in WAL mode
+  (client polls no longer wait on a processing run's writes) and waits up to
+  30 s for a lock rather than failing. (#91)
+- `deploy/nova-hub.service.j2` adds `NoNewPrivileges`, `PrivateTmp`,
+  `ProtectSystem=full` and `UMask=0077`, and `deploy.sh` makes its database
+  backup readable by the hub's user only. The unit file is installed by the
+  playbook, not `deploy.sh`, so a running hub keeps its unit until that is
+  re-run or the file is copied by hand. (#92)
+
+### Fixed
+- **Every stored time is UTC.** Packet download, processing, alert resolution
+  and the dashboard's stats used the host's local clock while everything else
+  used UTC. On a host outside UTC that shifted run durations, the MIT
+  window's checks and the reset confirmation window. Every hub host so far
+  runs in UTC, so no stored data is affected. (#89)
+- `received_at` and `retrieved_at` in the Service API's packet list end in
+  `Z`, as the spec's `date-time` promises. (#89)
+- A run's duration is never negative and counts past a day. (#89)
+- **Deleting a league left rows behind**: its attack and traffic sightings,
+  game settings, resets and run items, all pointing at a league that was
+  gone. With foreign keys on, the delete would have failed outright. It now
+  clears every table that names the league, and a run that also carried
+  another league's packets leaves those packets in place. (#91)
+- League creation and deletion are in the audit log. (#91)
+- A new league's number must be three digits; anything else made a league
+  no packet could be addressed to. (#91)
+- `reset_database.py` stamps the new database at the current migration, so
+  the next `alembic upgrade head` doesn't replay them all. (#91)
+- **The dashboard's 24-hour cards always said 0.** Packets and processing
+  runs in the last day are now counted (for a sysop, their own). (#92)
+- **A league's "processed" and "runs" counts always said 0.** They counted a
+  flag only nodelists ever set and a run column no run fills in. They now
+  count packets with a processed time, and the runs that moved or made
+  something for the league. Processing sets the flag from now on. (#92)
+- The activity chart is one query, not one an hour (168 for the week), and
+  the activity feed no longer looks up clients a packet at a time. It also
+  reads the hub's index from the config rather than assuming `01`. (#92)
+- `run.py --config` passes the file on to the app it starts; processing
+  re-reads that file each batch, not whatever `config.toml` is in the
+  working directory. (#92)
+- `purge_retention.py` reaches the dosemu transcripts on disk, as the
+  hub's own daily pass does, and reports them. (#92)
+- `/health` gives 503 when the database fails, and no longer returns the
+  error text to an unauthenticated caller. (#92)
+- Signing out reloads the page, so nothing the last session loaded is still
+  in memory for the next person to sign in. Form errors that FastAPI reports
+  as a list read as sentences in every view. (#92)
+- **A packet uploaded while processing ran waited for the next upload.**
+  The hub has no poll loop, and a trigger during a run was dropped, so the
+  last packet of a sync could sit in inbound for a day. The run now goes
+  round again when it finishes. (#90)
+- **A dosemu run that timed out kept running.** The timeout stopped waiting
+  but killed nothing, so a hung game held its folder (and `inuse.flg`)
+  against the next run. A timeout now kills script, dosemu and everything
+  they started, including a process that ignores the hangup or has been
+  orphaned. (#90)
+- **An upload retried after a dropped connection made a second packet.**
+  The same name and bytes within a day now answer with the packet the hub
+  already has. (#90)
+- Uploads no longer create a league for any number a client names: an
+  unknown league is a 404, and a disabled one, which is never processed, a
+  403. A bad `Content-Length` is a 400, not a 500, and a body is refused as
+  soon as it passes the size limit rather than after it is all read. (#90)
+- An uploaded packet records which client sent it (`source_client_id`). (#90)
+- A member not yet given a board index gets a 403, or an empty list, not a
+  500. (#90)
+- With sequence alerts enabled, a gap on a route that had wrapped was
+  resolved as "received" the moment it was raised, by the same number from
+  the time before. Resolution now matches the time round too. (#90)
+- Resolving or reopening an alert by hand now updates what the validator
+  reads, so a hand-resolved alert is no longer resolved again over the top. (#90)
+- A file in a game's outbound folder that isn't a packet is passed over
+  with a warning rather than logged as an error. (#90)
+- A reset's restore swaps the folders by rename, so there is never a moment
+  with no game folder, and it refuses links out of the folder. (#90)
+
+### Removed
+- The outbound folder watcher. It ran at every start, but in three months
+  of production it registered nothing: the hub's game writes packets only
+  during processing runs, which collect them themselves. `watchdog` is no
+  longer a dependency. (#90)
+
+### Upgrading
+- One migration (`e7a2c4d9b153`), indexes only, so no table is rebuilt: the
+  client poll's index, the run lookups, and unique indexes for one league
+  per number and game, one membership per BBS per league, and one reset
+  under way at a time. It also clears two packets' references to processing
+  runs that no longer exist. Rehearsed on a copy of production: under a
+  second, both ways, and `foreign_key_check` is clean afterwards. (#91)
+- WAL keeps `nova-hub.db-wal` and `nova-hub.db-shm` beside the database.
+  Back up with `sqlite3 nova-hub.db ".backup <copy>"`, as `deploy.sh`
+  does; a plain copy of `nova-hub.db` alone can miss recent writes. (#91)
+
+## [0.9.0] - 2026-10-19
+
+### Added
+- **Sysops rotate their own BBS's secret.** Regenerate Secret on the client
+  page is no longer admin-only: a BBS's owners have it too. It offers to keep
+  the old secret working for 24 hours (the API takes up to 72), so the node
+  isn't cut off before its config is edited, or to stop it now. Stopping it
+  now also ends the access tokens already issued, which otherwise live 24
+  hours: the usual reason to rotate in a hurry is a secret that got out. The
+  client page says until when the old secret works, and the audit log
+  records which was chosen. A claim link's new secret stops the old one the
+  same way.
+
+### Upgrading
+- One migration (`d4f1b7c2e980`): three nullable columns on `clients`.
+- Access tokens issued before this release have no issue time, so the first
+  rotation that stops a BBS's old secret ends them too, as intended.
+- Correct the stored Movements: `.venv/bin/python reparse_movements.py` shows
+  what it would change; run it again with `--apply`.
+
+### Fixed
+- **Movements named boards that don't exist** (1->31194, 1->683 on prod).
+  The game paints its transcript as a screen: it wrote a destination, then
+  jumped the cursor to repaint another record, and dropping that jump joined
+  the two numbers. It could as easily have made a believable wrong node. A
+  cursor move now ends the line, and cursor-forward is a space, which also
+  recovers records the parser used to miss. `reparse_movements.py` rewrites
+  the rows of every run whose transcript is still held (dry run unless
+  `--apply`); in older runs a node over 255 becomes unknown, shown as `?`.
+- **Movements showed a league's name without its game**, so a BRE and an FE
+  league of the same name looked alike in the table and the filter. It now
+  reads "015B League 015", as Attacks and Traffic do.
+
+### Changed
+- The Game reset page no longer explains the editor's league-wide question.
+  The hub always answers yes, and anyone on the page is there for exactly
+  that, so the game's help for it said nothing useful. The form's
+  `league_wide_help` field is gone from the Management API.
+- The test suite runs with no warnings (it printed 2,067): `datetime.utcnow()`
+  is replaced by `backend.core.clock.utcnow()`, which gives the same naive UTC,
+  and Pydantic models use `ConfigDict`.
+
+## [0.8.0] - 2026-10-17
+
+### Added
+- **Reset a game from the console.** A league's Game reset page lists every
+  setting of the game's own reset editor (BRE and FE), in its order, with the
+  game's help, default and limits and our notes where they disagree. An admin
+  saves a draft, then PERFORM RESET types it into `<EXE> RESET` through
+  sr-harness rather than writing `GAME.DAT`, which is checksummed. The hub
+  takes the processing lock, backs up the game folder (the last 5 are kept),
+  reads both editor pages back against the draft before saving, and on any
+  failure restores the folder byte for byte. A PLANETARY run then sends the
+  Game Start. Advised minimums warn rather than refuse; a typed league code
+  confirms. Rehearsed on a copy of production's 015B and 015F.
+- **Reset history**, on the reset page and the league page (admins only).
+  Every Game Start the hub passes is recorded: it confirms the console reset
+  before it field by field, or lists what disagrees, or is kept as a reset
+  seen in packets. `backfill_reset_history.py` reads the packets already on
+  disk. A row opens in place into its steps, editor log and what it changed.
+- **BRE Configupdate decoded.** Every reset setting but the start date, so
+  the form's "current" column shows the league's live settings. It fills in
+  at each league's first Configupdate after upgrading.
+- **A note on dates and timezones** on the reset form: the hub's zone, and
+  that each BBS applies the dates on its own clock.
+
+### Fixed
+- **Processing runs named no league.** A run takes every league with work,
+  so its `league_id` was never set and the League column always read "-".
+  Runs now report `leagues` (e.g. `["015B", "015F"]`) from the packets they
+  moved and the files they made; `league_name` is the same list joined.
+- **A run's scores looked incomplete.** The Score Files tab listed cards by
+  filename alone, so a two-league run showed two `BBSSCORE.ANS` with nothing
+  to tell them apart. Files are now grouped by league.
+- **Packets counted as waiting after their download.** 1,991 rows from
+  11-12 January 2026 have a download time but `is_downloaded` false; a
+  download time now counts, and migration `e7b3d1a9c524` sets the flag.
+- **Sticky headers and toolbars never stuck**: the main content area was its
+  own scroll container though the window is what scrolls.
+
+### Upgrading
+- Four migrations (`alembic upgrade head`): `b6d2e8f4a170`, `d4a9c2e7b815`,
+  `e7b3d1a9c524`, `a3c8e1f6d092`.
+- New runtime dependency: `sr-harness` v0.1.1 (with `pyte`, `wcwidth`),
+  installed from gitea. Install `requirements.txt` before restarting.
+- Startup now settles any reset a restart interrupted; with none, it does
+  nothing.
+
+## [0.7.1] - 2026-10-14
+
+### Changed
+- **The lock no longer downgrades production.** 0.7.0's lock was seeded from
+  the dev venv, which was behind production on seven packages. They are now
+  locked at production's versions: certifi 2026.7.22, cryptography 46.0.5,
+  multidict 6.7.1, pyasn1 0.6.2, pycparser 3.0, soupsieve 2.8.3, websockets
+  16.0. 0.7.0 was never deployed.
+
+## [0.7.0] - 2026-10-14
+
+### Fixed
+- **A board added through self-service never reached the other boards.**
+  Approving it regenerated the hub-side nodelist (the one you can download),
+  but members only receive a nodelist when the hub's own game sends it, which
+  BRE does on a maintenance day after its `BRNODES.DAT` changes. Nothing
+  changed that file, so the new board was missing from the hub's game and
+  from every member (prod, 015B/015F, Tentacle BBS). Generating a nodelist
+  now also writes it into the hub game's nodes file, under the name and case
+  the install already uses, and only when the content differs, so an
+  unchanged nodelist is not resent. This covers approvals, membership edits
+  (at the next processing run) and `POST /leagues/{id}/generate-nodelist`,
+  which now returns `warnings` when a league has no usable `game_folder`.
+  Proved on the live rig: `tests/live/test_nodelist_publish.py`.
+
+### Added
+- **Sample client config on the BBS's page.** The Client Information card
+  links a `config.toml` (Linux) and `config.psd1` (Windows) for the BBS, for
+  its own sysops and admins (`GET /clients/{id}/config/{linux|windows}`). It
+  is the file a claim hands back, with the hub address, client ID and
+  current leagues filled in, but the secret is a CHANGE-ME like the game
+  paths: the hub keeps only its hash. Downloading changes nothing.
+
+### Changed
+- **Dependencies are locked with uv.** `pyproject.toml` lists them as ranges,
+  `uv.lock` holds the exact versions (indirect dependencies included), and
+  `uv sync` builds `.venv` from it. `requirements.txt` is now exported from
+  the lock, so the deploy playbook's `uv pip install -r requirements.txt`
+  installs exactly what CI tested; CI fails if it falls out of step. pytest
+  and pytest-asyncio moved to the dev group and are no longer installed in
+  production. No version changed.
+- **FastAPI 0.128.0, Pydantic 2.12.5, pydantic-settings 2.12.0** (were
+  0.115.0, 2.10.0, 2.6.0). Deploying needs `uv pip install -r
+  requirements.txt` before the restart.
+- **API docs are split per API and kept current.** `docs/API.md` and
+  `docs/openapi.json` mixed both APIs in one file with one shared schema
+  list, and had not been regenerated since 0.5.0. `export_api_docs.py` now
+  writes `docs/service-api.{json,md}` and `docs/management-api.{json,md}`,
+  each spec exactly what that API serves at its `openapi.json`, keys sorted
+  (the service spec is the one `export_openapi.py` gives nova-client).
+  `tests/test_api_docs.py` fails while they are stale, so regenerate them in
+  the commit that changes an API, a release's version bump included.
+- **The live rig drives the games through sr-harness.** The rig's pty runner,
+  screen driver, 8.3 guard and BRE player walk were split out as the
+  standalone `lime/sr-harness` library (which also plays Falcon's Eye), and
+  the rig now installs it, pinned to v0.1.1, from `tests/live/requirements.txt`.
+  CI installs it too. Test-only: nothing in the product changed.
+
 ## [0.6.0] - 2026-10-12
 
 ### Added

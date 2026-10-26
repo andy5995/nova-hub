@@ -9,17 +9,20 @@ session cookie, so nothing past here knows which was used.
 import secrets
 from datetime import timedelta
 from typing import Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from backend.api.management.claim import public_url
+from backend.core.clock import utcnow
 from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.rate_limiter import _get_client_ip, check_rate_limit, record_failed_attempt
 from backend.core.security import (
     COOKIE_NAME,
+    burn_password_check,
     create_access_token,
     create_session_response,
     create_session_token,
@@ -80,13 +83,21 @@ async def login(
 
     user = db.query(SysopUser).filter(SysopUser.username == request.username).first()
 
-    # An account with no password signs in only through the provider.
-    if not user or not user.hashed_password or not verify_password(request.password, user.hashed_password):
+    # An account with no password signs in only through the provider. A
+    # disabled account is refused the same way, so it doesn't confirm the password.
+    if not user or not user.hashed_password:
+        burn_password_check(request.password)
+        ok = False
+    else:
+        ok = verify_password(request.password, user.hashed_password) and user.is_active
+    if not ok:
         record_failed_attempt(http_request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
         )
+    user.last_login = utcnow()
+    db.commit()
 
     config = get_config()
     # Create session token and set cookie
@@ -204,6 +215,7 @@ def user_response(user: SysopUser) -> UserResponse:
         id=user.id,
         username=user.username,
         is_admin=user.is_superuser,
+        is_active=bool(user.is_active),
         email=user.email,
         full_name=user.full_name,
         has_password=bool(user.hashed_password),
@@ -226,9 +238,15 @@ def _callback_url(request: Request) -> str:
 
 
 def _safe_next(next_path: Optional[str]) -> str:
-    """Only a path on this hub: never another site, so the redirect can't be borrowed."""
-    if next_path and next_path.startswith("/") and not next_path.startswith("//") \
-            and "\\" not in next_path:
+    """Only a path on this hub: never another site, so the redirect can't be borrowed.
+
+    Browsers drop tabs and newlines from a URL before reading it, so "/\t/evil"
+    becomes "//evil": whitespace and control characters are refused outright.
+    """
+    if (next_path and next_path.startswith("/") and not next_path.startswith("//")
+            and "\\" not in next_path
+            and not any(ord(c) <= 0x20 or ord(c) == 0x7F for c in next_path)
+            and not urlsplit(next_path).netloc):
         return next_path
     return "/dashboard"
 

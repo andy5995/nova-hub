@@ -42,6 +42,9 @@ def _report(result: dict, verb: str) -> None:
         print(f"  {label:<32} {tier['rows']:>8} rows  {_mb(tier['bytes']):>10}")
     print(f"  {'TOTAL':<32} {result['rows']:>8} rows  {_mb(result['bytes']):>10}"
           f"   {verb}")
+    if "log_files" in result:
+        print(f"  {'dosemu logs':<32} {result['log_files']:>8} files {_mb(result['log_bytes']):>10}"
+              f"   {verb.replace('cleared', 'deleted')}")
 
 
 def main() -> int:
@@ -65,6 +68,7 @@ def main() -> int:
             session,
             a.days if a.days is not None else config.processing.retention_days,
             a.batch_size or config.processing.retention_batch_size,
+            data_dir=config.server.data_dir,      # the dosemu logs tier, as the hub's own pass
         )
         if a.dry_run:
             _report(service.preview(), "would be cleared")
