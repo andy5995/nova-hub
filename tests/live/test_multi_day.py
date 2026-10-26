@@ -9,6 +9,8 @@ The reason this scenario is worth more than "days pass": it is the only way to
 see what a real game does to sequence numbers over time, and what it does is not
 what the hub assumes.
 """
+from datetime import date, timedelta
+
 import pytest
 
 from backend.models.database import Packet
@@ -21,8 +23,18 @@ LEAGUE = LEAGUES["900B"]
 NODE02 = NODES[2]
 HUB = NODES[HUB_INDEX]
 
-DAY1, DAY2, DAY3, DAY4, DAY5, DAY6 = ("20261001", "20261002", "20261003",
-                                     "20261004", "20261005", "20261006")
+# Game dates have to be strictly ahead of the game's own last run -- BRE refuses
+# to run if the date precedes it -- and a fresh RESET stamps the fixture with
+# today's date. So hardcoded constants work only until the wall clock passes
+# them. These were "20261001".."20261006" and on 2026-10-26 all nine tests in
+# this file failed with "nothing reached the hub": the game silently declined to
+# run 25 days backwards and emitted no packets, which looks like a routing bug
+# and is not one. Derive them from today instead, starting the day after the
+# reset so DAY1 is itself an unplayed game day.
+_FIRST_GAME_DAY = date.today() + timedelta(days=1)
+DAY1, DAY2, DAY3, DAY4, DAY5, DAY6 = (
+    (_FIRST_GAME_DAY + timedelta(days=n)).strftime("%Y%m%d") for n in range(6)
+)
 
 
 def _maintenance_fired(log_path) -> bool:
