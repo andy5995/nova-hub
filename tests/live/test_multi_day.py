@@ -61,9 +61,41 @@ ROUTE_02 = "900b0201."
 ROUTE_HUB = "900b0102."
 
 
+# Daily maintenance leaves several marks, and this looks for ANY of them.
+#
+# One literal is not safe. The transcript is a terminal capture, so dosemu's vga
+# repaint can write a line in fragments via cursor positioning, and the string
+# never appears in the byte stream at all. Observed on 2026-10-27, game day
+# 20261031:
+#
+#     ^[[6;15Hly Maintenance
+#
+# -- "Running Dai" was already on screen from an earlier repaint, so only the
+# tail was written. Measured over 87 consecutive game-day transcripts from one
+# run: 1 lacked "Running Daily Maintenance" and all 87 carried the other three.
+# That is ~1.1% per game day, which was tolerable when this ran six times and is
+# a coin flip over the ~70 game days these scenarios now play.
+#
+# Every marker here is specific to DAILY maintenance, which matters for
+# test_daily_maintenance_fires_once_per_game_day: re-running the same game day
+# must read as "did not fire". Checked against a new-day and a repeat-day
+# transcript -- all four appear once on a new day and not at all on a repeat.
+# "Planetary Maintenance Complete" is NOT usable: the PLANETARY command prints
+# it either way. Nor is the bare fragment "ly Maintenance", which turns up on a
+# repeat day too.
+#
+# "Maintainence" is the game's own spelling, not a typo here.
+_MAINTENANCE_MARKERS = (
+    "Running Daily Maintenance",
+    "Daily Maintainence Complete",
+    "Checking for Dead Empires",
+    "Updating Daily News Bulletin",
+)
+
+
 def _maintenance_fired(log_path) -> bool:
     text = log_path.read_bytes().decode("latin-1")
-    return "Running Daily Maintenance" in text
+    return any(marker in text for marker in _MAINTENANCE_MARKERS)
 
 
 def _play(node, prefix, days, tag):
@@ -158,6 +190,12 @@ async def test_sequence_numbers_are_not_dense_across_days(pristine):
     This test does not assert a particular pattern of skips, because the pattern
     is not stable. It asserts the property that matters: the numbers advance by
     MORE than one per emitted packet, so density cannot be relied on.
+
+    What CAN tell a quiet day from a lost packet is the game's own record of
+    what it sent: the `/DETAILED` transcript, already enabled on production,
+    which prints `Outbound mail for <name> - Node N created.` only when BRE
+    actually had something to send. Not ROUTEINFO -- that reports routing paths
+    (routes.lst, routes.bad), not packet history.
     """
     pristine("900B")
     _, packets = _play_until(NODE02, ROUTE_02, 3, "m")
@@ -257,18 +295,6 @@ async def test_a_game_day_consumes_a_sequence_number_whether_it_emits_or_not(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "B-4's stride learner only protects a REGULARLY emitting route. This "
-        "one is sparse (steps of 5 then 2), no stride clears STRIDE_DOMINANCE, "
-        "the learner falls back to a stride of 1, and five false alerts come "
-        "back on a route where nothing was lost. Not a rig artefact and not a "
-        "date artefact -- see the body. Raised as a finding rather than "
-        "weakened; strict so that fixing the detector fails this and makes "
-        "someone turn it back into a plain assertion."
-    ),
-)
 async def test_the_gap_detector_stays_quiet_when_nothing_was_lost(pristine, hub):
     """The test that reproduced production's 705 false alerts, now inverted.
 
@@ -277,52 +303,102 @@ async def test_the_gap_detector_stays_quiet_when_nothing_was_lost(pristine, hub)
     of its own accord on the days it stayed quiet. The detector used to alert on
     every one of those, which is the entire content of production's alert table.
 
-    ROLLOUT_PLAN card B-4. This was xfail, then a plain assertion once the
-    detector learned that a route's numbering is its own business, and is xfail
-    again for a narrower and more interesting reason.
+    ROLLOUT_PLAN card B-4.
 
-    B-4 learns the dominant step between a route's consecutive numbers and
-    accepts it only when at least two steps agree and one value holds
-    STRIDE_DOMINANCE (60%) of them. That works on production's BRE leagues,
-    which number densely -- the validator's own notes record 1000 packets
-    covering 1000 numbers, every step exactly 1 -- because those nodes run and
-    emit every day.
+    Why this plays sixty-odd game days instead of three. The route has to carry
+    at least MIN_PACKETS_FOR_DENSITY packets before the density gate will judge
+    it at all. Below that, numbers_densely() returns True no matter how sparse
+    the numbering actually looks, and the route stays noisy -- deliberately, so
+    that a route with six packets cannot be excused by an accident of its first
+    week. Measured on this very route:
 
-    An idle league does not emit every day. Measured here: .002, .007, .009,
-    steps of 5 and 2, no agreement, no stride, fall back to 1, and five alerts
-    for numbers the game simply never issued:
+        3 packets  -> numbers [2, 7, 9], density 0.286,
+                      numbers_densely() True (sample too small), 5 alerts
+        22 packets -> density 0.239, numbers_densely() False, 0 alerts
 
-        expected 003, received 007 (gap of 4)
-        expected 004, received 007 (gap of 4)
-        expected 005, received 007 (gap of 4)
-        expected 006, received 007 (gap of 4)
-        expected 008, received 009 (gap of 1)
-
-    So the 705 false alerts are suppressed for a node that emits daily and
-    return for one that does not. Production's BRE nodes currently emit daily,
-    which is why the fix held there; a quiet or intermittently run BRE node
-    would bring them back. Telling that apart from a real loss needs the game's
-    own record of what it sent (ROUTEINFO), which is the same conclusion B-4
-    reached for Falcon's Eye.
+    So three game days was asking the detector to exempt a route on three
+    packets of evidence, which is exactly what it is built to refuse. Give it the
+    evidence it asks for and it goes quiet. The companion test below pins the
+    other half, so that nobody makes this one pass by lowering the constant.
     """
-    from backend.services.sequence_validator import SequenceValidator
+    from backend.services.sequence_validator import (
+        MIN_PACKETS_FOR_DENSITY,
+        SequenceValidator,
+    )
 
     pristine("900B")
     hub.seed(["900B"])
 
-    _, packets = _play_until(NODE02, ROUTE_02, 3, "g")
+    # ~35 game days per 11 packets on an idle league, so 20 packets needs about
+    # 60. max_days is generous rather than tight: running out is a real finding
+    # and _play_until says so.
+    _, packets = _play_until(
+        NODE02, ROUTE_02, MIN_PACKETS_FOR_DENSITY, "g", max_days=110
+    )
     delivered = []
     for name, payload in packets:
         hub.deliver(name, payload)
         delivered.append(name)
 
-    assert len(delivered) >= 3, f"not enough traffic to test with: {delivered}"
+    assert len(delivered) >= MIN_PACKETS_FOR_DENSITY, (
+        f"need {MIN_PACKETS_FOR_DENSITY} packets before the density gate will "
+        f"judge this route, got {len(delivered)}: {delivered}"
+    )
 
     alerts = SequenceValidator(hub.db).check_sequences()
     assert alerts == [], (
         f"delivered every packet the game produced ({delivered}) and the gap "
         f"detector raised {len(alerts)} alert(s): "
         + "; ".join(a.description for a in alerts)
+    )
+
+
+async def test_a_route_below_the_minimum_sample_is_left_noisy(pristine, hub):
+    """The other half of the trade, asserted so it cannot be tuned away quietly.
+
+    A young route is NOT exempted. Three packets from an idle league read
+    [2, 7, 9] -- a real density of 0.286, far below DENSITY_THRESHOLD -- and the
+    detector still alerts on all five unused numbers, because
+    MIN_PACKETS_FOR_DENSITY has not been reached and it will not excuse a route
+    on that little evidence.
+
+    This is the deliberate cost of the gate above, and it is the knob someone
+    would reach for first if these alerts became annoying. Lowering
+    MIN_PACKETS_FOR_DENSITY would quieten a genuinely lost packet on any route
+    in its first week, which is the failure the 705 alerts were hiding. So the
+    noise is asserted, not tolerated: if it ever goes away, that was a decision
+    and this test should be the thing that makes someone say so out loud.
+    """
+    from backend.services.sequence_validator import (
+        MIN_PACKETS_FOR_DENSITY,
+        SequenceValidator,
+    )
+
+    pristine("900B")
+    hub.seed(["900B"])
+
+    _, packets = _play_until(NODE02, ROUTE_02, 3, "n")
+    for name, payload in packets:
+        hub.deliver(name, payload)
+
+    numbers = _numbers(packets)
+    assert len(numbers) < MIN_PACKETS_FOR_DENSITY, (
+        f"this test is about the below-minimum case and the route now has "
+        f"{len(numbers)} packets"
+    )
+
+    validator = SequenceValidator(hub.db)
+    assert validator.numbers_densely(numbers) is True, (
+        f"a {len(numbers)}-packet route should be treated as dense regardless "
+        f"of its apparent density ({numbers}), so that it stays noisy"
+    )
+
+    alerts = validator.check_sequences()
+    assert alerts, (
+        f"a route below MIN_PACKETS_FOR_DENSITY went quiet on {numbers}. If "
+        f"that is now intended, the cost is that a genuine loss in a route's "
+        f"first week no longer alerts either -- say so deliberately rather than "
+        f"deleting this test."
     )
 
 
