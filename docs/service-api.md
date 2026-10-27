@@ -225,7 +225,7 @@ curl -X GET "https://hub.example.com/service/api/v1/leagues/555B/nodelist" \
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BFbf])$`
+  - Pattern: `^(\d{3})([BFIbfi])$`
 
 **If-None-Match**
   - Type: `string`
@@ -276,12 +276,17 @@ Upload a game packet to the hub using PUT with raw body
 
 **Request Body:** Raw file data (application/octet-stream)
 
-**Packet Filename Format:** `<league><game><source><dest>.<seq>`
+**Packet Filename Format, BRE and FE:** `<league><game><source><dest>.<seq>`
 - League: 3 digits (e.g., 555)
 - Game: B (BRE) or F (FE)
 - Source: 2-digit hex BBS index (e.g., 02)
 - Dest: 2-digit hex BBS index (e.g., 01)
 - Seq: 3-digit sequence (000-999)
+
+**Packet Filename Format, Immortal Barons:** `L<league>-<source>-<seq>-<dest>.brp`
+- League: 3 digits (e.g., 555), in a league with game I (555I)
+- Source, Dest: BBS index in base 36 (e.g., 2, 1z); dest 0 is every board
+- Seq: 13-digit zero-padded base-36 sequence
 
 **Example:** `555B0201.001` = BRE League 555, from BBS 02 to BBS 01, seq 1
 
@@ -292,7 +297,7 @@ Upload a game packet to the hub using PUT with raw body
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BFbf])$`
+  - Pattern: `^(\d{3})([BFIbfi])$`
 
 **filename**
   - Type: `string`
@@ -345,7 +350,7 @@ Download a specific packet file
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BFbf])$`
+  - Pattern: `^(\d{3})([BFIbfi])$`
 
 **filename**
   - Type: `string`
@@ -394,7 +399,7 @@ List packets available for download by this client
 **league_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^(\d{3})([BFbf])$`
+  - Pattern: `^(\d{3})([BFIbfi])$`
 
 **unread**
 - Filter to only unread (not downloaded) packets

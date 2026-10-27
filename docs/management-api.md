@@ -2003,7 +2003,7 @@ Create a new league (admin only)
 
 **Request Body:**
 - `league_id`: 3-digit league number (e.g., "555")
-- `game_type`: "B" for BRE or "F" for Falcon's Eye
+- `game_type`: "B" for BRE, "F" for Falcon's Eye or "I" for Immortal Barons
 - `name`: Display name for the league
 - `description`: Optional description
 - `dosemu_path`: Path to DOSemu installation (optional)

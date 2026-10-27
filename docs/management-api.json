@@ -7448,7 +7448,7 @@
         ]
       },
       "post": {
-        "description": "Create a new league (admin only)\n\n**Request Body:**\n- `league_id`: 3-digit league number (e.g., \"555\")\n- `game_type`: \"B\" for BRE or \"F\" for Falcon's Eye\n- `name`: Display name for the league\n- `description`: Optional description\n- `dosemu_path`: Path to DOSemu installation (optional)\n- `game_executable`: Game executable name (optional)\n- `is_active`: Whether league is active (default: true)\n\n**Returns:** Created league\n\n**Example:**\n```bash\ncurl -X POST \"https://hub.example.com/management/api/v1/leagues\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"league_id\": \"555\", \"game_type\": \"B\", \"name\": \"BRE League 555\"}' \\\n  -b cookies.txt\n```",
+        "description": "Create a new league (admin only)\n\n**Request Body:**\n- `league_id`: 3-digit league number (e.g., \"555\")\n- `game_type`: \"B\" for BRE, \"F\" for Falcon's Eye or \"I\" for Immortal Barons\n- `name`: Display name for the league\n- `description`: Optional description\n- `dosemu_path`: Path to DOSemu installation (optional)\n- `game_executable`: Game executable name (optional)\n- `is_active`: Whether league is active (default: true)\n\n**Returns:** Created league\n\n**Example:**\n```bash\ncurl -X POST \"https://hub.example.com/management/api/v1/leagues\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"league_id\": \"555\", \"game_type\": \"B\", \"name\": \"BRE League 555\"}' \\\n  -b cookies.txt\n```",
         "operationId": "create_league_api_v1_leagues_post",
         "requestBody": {
           "content": {

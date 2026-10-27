@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.schemas.clients import _validate_bbs_name, _validate_location
 
+from backend.services.games import MAX_BBS_INDEX
+
 
 class JoinableLeague(BaseModel):
     id: int
@@ -106,7 +108,7 @@ class ApplicationReview(BaseModel):
 
 class Grant(BaseModel):
     league_id: int
-    bbs_index: int = Field(..., ge=1, le=255)
+    bbs_index: int = Field(..., ge=1, le=MAX_BBS_INDEX)
     ftn_address: str = Field(..., min_length=1, max_length=50)
 
 

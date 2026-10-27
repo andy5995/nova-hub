@@ -416,7 +416,7 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BFbf])$",
+              "pattern": "^(\\d{3})([BFIbfi])$",
               "title": "League Id",
               "type": "string"
             }
@@ -485,7 +485,7 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BFbf])$",
+              "pattern": "^(\\d{3})([BFIbfi])$",
               "title": "League Id",
               "type": "string"
             }
@@ -546,7 +546,7 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BFbf])$",
+              "pattern": "^(\\d{3})([BFIbfi])$",
               "title": "League Id",
               "type": "string"
             }
@@ -595,7 +595,7 @@
         ]
       },
       "put": {
-        "description": "Upload a game packet to the hub using PUT with raw body\n\n**Path Parameters:**\n- `league_id`: League identifier with game type (e.g., \"555B\" for BRE, \"555F\" for FE)\n- `filename`: Packet filename (e.g., \"555B0201.001\")\n\n**Request Body:** Raw file data (application/octet-stream)\n\n**Packet Filename Format:** `<league><game><source><dest>.<seq>`\n- League: 3 digits (e.g., 555)\n- Game: B (BRE) or F (FE)\n- Source: 2-digit hex BBS index (e.g., 02)\n- Dest: 2-digit hex BBS index (e.g., 01)\n- Seq: 3-digit sequence (000-999)\n\n**Example:** `555B0201.001` = BRE League 555, from BBS 02 to BBS 01, seq 1\n\n**Authentication:** Requires Bearer token",
+        "description": "Upload a game packet to the hub using PUT with raw body\n\n**Path Parameters:**\n- `league_id`: League identifier with game type (e.g., \"555B\" for BRE, \"555F\" for FE)\n- `filename`: Packet filename (e.g., \"555B0201.001\")\n\n**Request Body:** Raw file data (application/octet-stream)\n\n**Packet Filename Format, BRE and FE:** `<league><game><source><dest>.<seq>`\n- League: 3 digits (e.g., 555)\n- Game: B (BRE) or F (FE)\n- Source: 2-digit hex BBS index (e.g., 02)\n- Dest: 2-digit hex BBS index (e.g., 01)\n- Seq: 3-digit sequence (000-999)\n\n**Packet Filename Format, Immortal Barons:** `L<league>-<source>-<seq>-<dest>.brp`\n- League: 3 digits (e.g., 555), in a league with game I (555I)\n- Source, Dest: BBS index in base 36 (e.g., 2, 1z); dest 0 is every board\n- Seq: 13-digit zero-padded base-36 sequence\n\n**Example:** `555B0201.001` = BRE League 555, from BBS 02 to BBS 01, seq 1\n\n**Authentication:** Requires Bearer token",
         "operationId": "upload_packet_api_v1_leagues__league_id__packets__filename__put",
         "parameters": [
           {
@@ -603,7 +603,7 @@
             "name": "league_id",
             "required": true,
             "schema": {
-              "pattern": "^(\\d{3})([BFbf])$",
+              "pattern": "^(\\d{3})([BFIbfi])$",
               "title": "League Id",
               "type": "string"
             }
