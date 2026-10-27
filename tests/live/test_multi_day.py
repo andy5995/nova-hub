@@ -23,6 +23,13 @@ hard way on 2026-10-27:
    quantity of traffic, and anything that needs N packets has to play until it
    has N packets rather than assume a fixed number of days will supply them.
    That is what _play_until is for.
+
+   The schedule itself is now known, and it is simple: BRE emits when
+   `ordinal % 5 == 1` or the day is a Saturday, FE every fourth day. See
+   test_emission_schedule.py. That does not rescue a fixed-length window here --
+   it is a fixed number of PACKETS these tests need -- but it does mean a window
+   DERIVED from a phase is repeatable, which is how the schedule itself is
+   pinned.
 """
 from datetime import date, timedelta
 
